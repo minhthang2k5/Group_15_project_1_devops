@@ -10,6 +10,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 @EnableConfigurationProperties({ServiceUrlConfig.class, CorsConfig.class})
 public class CartApplication {
 
+    // Entry point for the cart service application.
     public static void main(String[] args) {
         SpringApplication.run(CartApplication.class, args);
     }
