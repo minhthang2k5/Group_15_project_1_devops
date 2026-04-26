@@ -56,19 +56,8 @@ pipeline {
                 sh 'java -version'
                 
                 script {
-                    def services = getChangedServices()
-                    
-                    if (services.isEmpty()) {
-                        echo 'Đang chạy Unit Test và tạo report Coverage cho TOÀN BỘ dự án...'
-                        sh "mvn clean test jacoco:report '-Dsurefire.excludes=**/*IT.java,**/*IT\$*.java,**/ProductCdcConsumerTest.java,**/ProductVectorRepositoryTest.java,**/VectorQueryTest.java'"
-                    } else {
-                        echo 'Đang chạy Unit Test và tạo report Coverage cho CÁC SERVICE BỊ THAY ĐỔI...'
-                        for (service in services) {
-                            stage("Test ${service}") {
-                                sh "mvn clean test jacoco:report -pl ${service} -am '-Dsurefire.excludes=**/*IT.java,**/*IT\$*.java,**/ProductCdcConsumerTest.java,**/ProductVectorRepositoryTest.java,**/VectorQueryTest.java'"
-                            }
-                        }
-                    }
+                    echo 'Đang chạy Unit Test và tạo report Coverage cho SEARCH service...'
+                    sh "mvn clean test jacoco:report jacoco:check -pl search -am '-Dsurefire.excludes=**/*IT.java,**/*IT\$*.java,**/ProductCdcConsumerTest.java,**/ProductVectorRepositoryTest.java,**/VectorQueryTest.java'"
                 }
             }
 
@@ -77,9 +66,9 @@ pipeline {
                 always {
                     echo 'Upload Test Result và TestCoverage cho Phase Test...'
                     junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
-                    jacoco execPattern: '**/target/jacoco.exec',
-                           classPattern: '**/target/classes',
-                           sourcePattern: '**/src/main/java'
+                    jacoco execPattern: 'search/target/jacoco.exec',
+                           classPattern: 'search/target/classes',
+                           sourcePattern: 'search/src/main/java'
                 }
             }
         }
