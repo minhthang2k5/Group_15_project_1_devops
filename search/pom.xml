@@ -96,6 +96,7 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
+                <configuration combine.self="override"/>
                 <executions>
                     <execution>
                         <id>jacoco-check-70-percent</id>
