@@ -5,12 +5,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.yas.search.kafka.config.consumer.AppKafkaListenerConfigurer;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.convert.converter.Converter;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistrar;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
@@ -77,7 +76,6 @@ class SearchInfrastructureUnitTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void testSecurityConfig_jwtConverterMapsRolesToAuthorities() {
         SecurityConfig securityConfig = new SecurityConfig();
         JwtAuthenticationConverter converter = securityConfig.jwtAuthenticationConverterForKeycloak();
@@ -86,13 +84,11 @@ class SearchInfrastructureUnitTest {
             .claim("realm_access", Map.of("roles", List.of("ADMIN", "MANAGER")))
             .build();
 
-        Converter<Jwt, java.util.Collection<GrantedAuthority>> grantedAuthoritiesConverter =
-            (Converter<Jwt, java.util.Collection<GrantedAuthority>>) converter.getJwtGrantedAuthoritiesConverter();
+        var authentication = converter.convert(jwt);
 
-        java.util.Collection<GrantedAuthority> authorities = grantedAuthoritiesConverter.convert(jwt);
-
-        assertThat(authorities)
-            .extracting(GrantedAuthority::getAuthority)
+        assertThat(authentication).isNotNull();
+        assertThat(authentication.getAuthorities())
+            .extracting(authority -> authority.getAuthority())
             .containsExactlyInAnyOrder("ROLE_ADMIN", "ROLE_MANAGER");
     }
 }
