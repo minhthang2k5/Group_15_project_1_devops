@@ -52,6 +52,7 @@ class ConstantClassTest {
         assertThatThrownBy(constructor::newInstance)
             .isInstanceOf(InvocationTargetException.class)
             .hasCauseInstanceOf(UnsupportedOperationException.class)
-            .hasMessageContaining("This is a utility class and cannot be instantiated");
+            .satisfies(ex -> assertThat(ex.getCause())
+                .hasMessage("This is a utility class and cannot be instantiated"));
     }
 }

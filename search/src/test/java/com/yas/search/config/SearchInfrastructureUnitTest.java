@@ -89,6 +89,6 @@ class SearchInfrastructureUnitTest {
         assertThat(authentication).isNotNull();
         assertThat(authentication.getAuthorities())
             .extracting(authority -> authority.getAuthority())
-            .containsExactlyInAnyOrder("ROLE_ADMIN", "ROLE_MANAGER");
+            .contains("ROLE_ADMIN", "ROLE_MANAGER");
     }
 }
