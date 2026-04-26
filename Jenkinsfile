@@ -52,12 +52,12 @@ pipeline {
 
         stage('Test & Coverage') {
             steps {
-                echo 'Đang kiểm traa phiên bản Java...'
+                echo 'Đang kiểm tra phiên bản Java...'
                 sh 'java -version'
                 
                 script {
                     echo 'Đang chạy Unit Test và tạo report Coverage cho SEARCH service...'
-                    sh "mvn clean test jacoco:report jacoco:check -pl search -am '-Dsurefire.excludes=**/*IT.java,**/*IT\$*.java,**/ProductCdcConsumerTest.java,**/ProductVectorRepositoryTest.java,**/VectorQueryTest.java'"
+                    sh "mvn clean verify -pl search -am -DskipITs=true '-Dsurefire.excludes=**/*IT.java,**/*IT\$*.java,**/ProductCdcConsumerTest.java,**/ProductVectorRepositoryTest.java,**/VectorQueryTest.java'"
                 }
             }
 
