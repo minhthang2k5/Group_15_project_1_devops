@@ -52,7 +52,7 @@ pipeline {
 
         stage('Test & Coverage') {
             steps {
-                echo 'Đang kiểm tra phiên bản Java...'
+                echo 'Đang kiểm traa phiên bản Java...'
                 sh 'java -version'
                 
                 script {
