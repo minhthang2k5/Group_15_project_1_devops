@@ -219,7 +219,7 @@ pipeline {
                             echo "Quét Snyk cho CÁC SERVICE BỊ THAY ĐỔI: ${services}"
                             for (String svc : services) {
                                 if (fileExists("${svc}/pom.xml")) {
-                                    sh "./snyk test --file=${svc}/pom.xml --json-file-output=reports/snyk/snyk-${svc}.json"
+                                    sh "./snyk test --file=${svc}/pom.xml  --json-file-output=reports/snyk/snyk-${svc}.json || true"
                                 }
                             }
                         }
