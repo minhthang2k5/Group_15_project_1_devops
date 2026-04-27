@@ -3,15 +3,14 @@ description = "Ignore dummy secrets and test configs in YAS repository"
 paths = [
     '''automation-ui/backoffice/src/test/java/com/yas/automation/ui/steps/LoginSteps\.java''',
     '''automation-ui/storefront/src/test/java/com/yas/automation/ui/steps/LoginSteps\.java''',
-    '''common-library/src/test/resources/test-realm\.json''',
-    '''identity/realm-export\.json''',
-    '''k8s/charts/yas-configuration/values\.yaml''',
-    '''k8s/deploy/cluster-config\.yaml''',
-    '''k8s/deploy/keycloak/keycloak/templates/keycloak-yas-realm-import\.yaml''',
-    '''k8s/deploy/README\.md''',
-    '''recommendation/src/test/resources/test-realm\.json''',
-    '''search/src/test/java/resources/test-realm\.json''',
-    '''payment/src/main/resources/db/changelog/data/changelog-0001-provider\.sql''',
     '''customer/src/it/resources/application\.properties''',
-    '''customer/src/main/resources/application\.properties'''
+    '''customer/src/main/resources/application\.properties''',
+    '''common-library/src/test/resources/test-realm\.json''',
+    '''k8s/deploy/cluster-config\.yaml''',
+    '''k8s/charts/yas-configuration/values\.yaml''',
+    '''payment/src/main/resources/db/changelog/data/changelog-0001-provider\.sql''',
+    '''identity/realm-export\.json''',
+    '''k8s/deploy/keycloak/keycloak/templates/keycloak-yas-realm-import\.yaml''',
+    '''recommendation/src/test/resources/test-realm\.json''',
+    '''search/src/test/java/resources/test-realm\.json'''
 ]
