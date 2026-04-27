@@ -214,7 +214,7 @@ pipeline {
 
                         if (services.isEmpty()) {
                             echo 'Không phát hiện service thay đổi. Quét Snyk cho TOÀN BỘ dự án.'
-                            sh './snyk test --all-projects --json-file-output=reports/snyk/snyk-all-projects.json'
+                            sh './snyk test --all-projects --json-file-output=reports/snyk/snyk-all-projects.json || true'
                         } else {
                             echo "Quét Snyk cho CÁC SERVICE BỊ THAY ĐỔI: ${services}"
                             for (String svc : services) {
