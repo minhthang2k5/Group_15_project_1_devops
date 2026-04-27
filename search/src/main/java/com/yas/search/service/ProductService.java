@@ -60,7 +60,7 @@ public class ProductService {
                         )
                 )
                 .withPageable(PageRequest.of(productCriteria.page(), productCriteria.size()));
-
+//test change
 
         nativeQuery.withFilter(f -> f
                 .bool(b -> {
