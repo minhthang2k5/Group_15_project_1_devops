@@ -78,6 +78,24 @@ pipeline {
             }
         }
 
+        stage('Security Scan: Gitleaks') {
+            steps {
+                script {
+                    echo '=> Bắt đầu tải và chạy Gitleaks...'
+                    sh '''
+                    wget -qO- https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_8.18.2_linux_x64.tar.gz | tar xvz
+                    chmod +x gitleaks
+                    ./gitleaks detect --source . -v --redact --report-path=gitleaks-report.json
+                    '''
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'gitleaks-report.json', allowEmptyArchive: true
+                }
+            }
+        }
+
         stage('Test & Coverage') {
             steps {
                 echo 'Đang kiểm tra phiên bản Java...'
