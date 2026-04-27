@@ -154,6 +154,30 @@ pipeline {
             }
         }
 
+        stage('SonarQube Analysis') {
+            steps {
+                script {
+                    echo '=> Bắt đầu phân tích mã nguồn với SonarQube...'
+                    def services = getChangedServices().toList().sort()
+
+                    withSonarQubeEnv('SonarQube') {
+                        if (services.isEmpty()) {
+                            echo 'Không phát hiện service thay đổi. Phân tích SonarQube cho toàn bộ dự án.'
+                            sh '''
+                            mvn -B -DskipTests sonar:sonar \
+                              -Dsonar.projectKey=nashtech-garage_yas-yas-parent \
+                              -Dsonar.projectName="YAS Parent"
+                            '''
+                        } else {
+                            def serviceSelector = services.join(',')
+                            echo "Phân tích SonarQube cho CÁC SERVICE BỊ THAY ĐỔI: ${services}"
+                            sh "mvn -B -DskipTests -pl ${serviceSelector} -am sonar:sonar -Dsonar.projectKey=nashtech-garage_yas-yas-parent -Dsonar.projectName='YAS Microservices'"
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Build') {
             steps {
                 script {
