@@ -186,6 +186,53 @@ pipeline {
     }
 }
 
+        stage('Security Scan: Snyk SCA') {
+            steps {
+                withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
+                    script {
+                        echo '=> Bắt đầu tải và phân tích bảo mật thư viện với Snyk...'
+                        sh '''
+                        set -e
+                        mkdir -p reports/snyk
+
+                        if command -v snyk >/dev/null 2>&1; then
+                          cp "$(command -v snyk)" ./snyk
+                        elif command -v curl >/dev/null 2>&1; then
+                          curl -sSL -o ./snyk https://github.com/snyk/snyk/releases/latest/download/snyk-linux
+                        elif command -v wget >/dev/null 2>&1; then
+                          wget -qO ./snyk https://github.com/snyk/snyk/releases/latest/download/snyk-linux
+                        else
+                          echo "ERROR: Agent không có snyk/curl/wget để chạy Snyk." >&2
+                          exit 2
+                        fi
+
+                        chmod +x ./snyk
+                        ./snyk --version
+                        '''
+
+                        def services = getChangedServices().toList().sort()
+
+                        if (services.isEmpty()) {
+                            echo 'Không phát hiện service thay đổi. Quét Snyk cho TOÀN BỘ dự án.'
+                            sh './snyk test --all-projects --json-file-output=reports/snyk/snyk-all-projects.json'
+                        } else {
+                            echo "Quét Snyk cho CÁC SERVICE BỊ THAY ĐỔI: ${services}"
+                            for (String svc : services) {
+                                if (fileExists("${svc}/pom.xml")) {
+                                    sh "./snyk test --file=${svc}/pom.xml --json-file-output=reports/snyk/snyk-${svc}.json"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'reports/snyk/*.json', allowEmptyArchive: true
+                }
+            }
+        }
+
         stage('Build') {
             steps {
                 script {
