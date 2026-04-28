@@ -2,6 +2,7 @@ package test.java.com.yas.product.utils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.yas.product.utils.ProductConverter;
 import org.junit.jupiter.api.Test;
 
 class ProductConverterTest {
