@@ -241,4 +241,29 @@ class RatingServiceTest {
         List<RatingVm>  newResponse = ratingService.getLatestRatings(5);
         assertEquals(0, newResponse.size());
     }
-}
+
+    @Test
+    void createRating_WhenCustomerIsNull_ShouldThrowNotFoundException() {
+        Jwt jwt = mock(Jwt.class);
+        JwtAuthenticationToken authentication = mock(JwtAuthenticationToken.class);
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        when(authentication.getToken()).thenReturn(jwt);
+        when(authentication.getName()).thenReturn("newUser");
+        when(jwt.getSubject()).thenReturn("newUser");
+        when(orderService.checkOrderExistsByProductAndUserWithStatus(anyLong()))
+                .thenReturn(new OrderExistsByProductAndUserGetVm(true));
+        when(customerService.getCustomer()).thenReturn(null);
+
+        RatingPostVm ratingPostVm = RatingPostVm.builder()
+                .content("comment 5")
+                .productName("product5")
+                .star(5)
+                .productId(5L)
+                .build();
+
+        NotFoundException exception = assertThrows(NotFoundException.class,
+                () -> ratingService.createRating(ratingPostVm));
+
+        assertEquals("CUSTOMER newUser is not found", exception.getMessage());
+    }
+}
