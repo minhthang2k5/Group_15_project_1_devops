@@ -88,7 +88,7 @@ pipeline {
 
                                         if command -v gitleaks >/dev/null 2>&1; then
                                             echo "Sử dụng gitleaks có sẵn trên agent"
-                                            gitleaks detect --source . -v --redact --config gitleaks.toml --report-path=gitleaks-report.json
+                                            gitleaks detect --source . -v --redact --config gitleaks.toml --no-git --report-path=gitleaks-report.json
                                             exit 0
                                         fi
 
@@ -102,7 +102,7 @@ pipeline {
                                         fi
 
                                         chmod +x gitleaks
-                                        ./gitleaks detect --source . -v --redact --config gitleaks.toml --report-path=gitleaks-report.json
+                                        ./gitleaks detect --source . -v --redact --config gitleaks.toml --no-git --report-path=gitleaks-report.json
                     '''
                 }
             }
