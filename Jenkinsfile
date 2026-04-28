@@ -96,6 +96,22 @@ pipeline {
                 }
             }
 
+
+            steps {
+                script {
+                    def services = getChangedServices().toList().sort()
+
+                    if (services.isEmpty()) {
+                        echo 'Không phát hiện service thay đổi. Bỏ qua các stage Test <service>.'
+                    } else {
+                        for (service in services) {
+                            stage("Test ${service}") {
+                                echo "Service ${service} đã được test ở stage Test & Coverage."
+                            }
+                        }
+                    }
+                }
+            }
             // Di chuyển logic upload sang Phase Test theo yêu cầu của bài
             post {
                 always {
@@ -113,22 +129,6 @@ pipeline {
                             jacoco execPattern: execPatterns,
                                    classPattern: classPatterns,
                                    sourcePattern: sourcePatterns
-                        }
-                    }
-                }
-            }
-
-            steps {
-                script {
-                    def services = getChangedServices().toList().sort()
-
-                    if (services.isEmpty()) {
-                        echo 'Không phát hiện service thay đổi. Bỏ qua các stage Test <service>.'
-                    } else {
-                        for (service in services) {
-                            stage("Test ${service}") {
-                                echo "Service ${service} đã được test ở stage Test & Coverage."
-                            }
                         }
                     }
                 }
