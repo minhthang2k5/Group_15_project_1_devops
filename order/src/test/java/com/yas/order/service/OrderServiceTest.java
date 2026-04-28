@@ -23,9 +23,8 @@ import com.yas.order.model.enumeration.DeliveryMethod;
 import com.yas.order.model.OrderAddress;
 import com.yas.commonlibrary.utils.AuthenticationUtils;
 import com.yas.order.model.request.OrderRequest;
-import com.yas.commonlibrary.csv.BaseCsv;
-import com.yas.order.viewmodel.order.OrderBriefVm;
 import com.yas.order.viewmodel.order.OrderListVm;
+import com.yas.order.viewmodel.product.ProductVariationVm;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.ZonedDateTime;
@@ -205,6 +204,37 @@ class OrderServiceTest {
     }
 
     @Test
+    void updateOrderPaymentStatus_WhenPaymentStatusNotCompleted_ShouldNotSetOrderStatusToPaid() {
+        PaymentOrderStatusVm request = PaymentOrderStatusVm.builder()
+                .orderId(1L)
+                .paymentId(123L)
+                .paymentStatus(PaymentStatus.PENDING.name())
+                .build();
+
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenReturn(order);
+
+        PaymentOrderStatusVm result = orderService.updateOrderPaymentStatus(request);
+
+        assertThat(result.paymentStatus()).isEqualTo(PaymentStatus.PENDING.name());
+        assertThat(order.getPaymentStatus()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(order.getOrderStatus()).isNotEqualTo(OrderStatus.PAID);
+    }
+
+    @Test
+    void updateOrderPaymentStatus_WhenOrderNotFound_ShouldThrowNotFoundException() {
+        PaymentOrderStatusVm request = PaymentOrderStatusVm.builder()
+                .orderId(999L)
+                .paymentId(123L)
+                .paymentStatus(PaymentStatus.COMPLETED.name())
+                .build();
+
+        when(orderRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThrows(NotFoundException.class, () -> orderService.updateOrderPaymentStatus(request));
+    }
+
+    @Test
     void rejectOrder_WhenOrderExists_ShouldUpdateStatusToReject() {
         when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
 
@@ -216,6 +246,13 @@ class OrderServiceTest {
     }
 
     @Test
+    void rejectOrder_WhenOrderNotFound_ShouldThrowNotFoundException() {
+        when(orderRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThrows(NotFoundException.class, () -> orderService.rejectOrder(999L, "reason"));
+    }
+
+    @Test
     void acceptOrder_WhenOrderExists_ShouldUpdateStatusToAccepted() {
         when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
 
@@ -223,6 +260,13 @@ class OrderServiceTest {
 
         verify(orderRepository).save(order);
         assertThat(order.getOrderStatus()).isEqualTo(OrderStatus.ACCEPTED);
+    }
+
+    @Test
+    void acceptOrder_WhenOrderNotFound_ShouldThrowNotFoundException() {
+        when(orderRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThrows(NotFoundException.class, () -> orderService.acceptOrder(999L));
     }
     
     @Test
@@ -264,6 +308,26 @@ class OrderServiceTest {
         assertThat(result).isNotNull();
         assertThat(result.totalElements()).isEqualTo(1);
     }
+
+    @Test
+    void getAllOrder_WhenPageIsEmpty_ShouldReturnEmptyOrderListVm() {
+        Page<Order> emptyPage = Page.empty();
+        when(orderRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(emptyPage);
+
+        var result = orderService.getAllOrder(
+            Pair.of(ZonedDateTime.now(), ZonedDateTime.now()),
+            "product",
+            List.of(),
+            Pair.of("VN", "123456"),
+            "test@example.com",
+            Pair.of(0, 10)
+        );
+
+        assertThat(result).isNotNull();
+        assertThat(result.orderList()).isNull();
+        assertThat(result.totalElements()).isEqualTo(0);
+        assertThat(result.totalPages()).isEqualTo(0);
+    }
     
     @Test
     void getLatestOrders_WhenOrdersExist_ShouldReturnOrderBriefVms() {
@@ -272,6 +336,36 @@ class OrderServiceTest {
         var result = orderService.getLatestOrders(5);
         
         assertThat(result).hasSize(1);
+    }
+
+    @Test
+    void getLatestOrders_WhenCountIsZero_ShouldReturnEmptyList() {
+        var result = orderService.getLatestOrders(0);
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void getLatestOrders_WhenCountIsNegative_ShouldReturnEmptyList() {
+        var result = orderService.getLatestOrders(-1);
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void getLatestOrders_WhenNoOrdersFound_ShouldReturnEmptyList() {
+        when(orderRepository.getLatestOrders(any(Pageable.class))).thenReturn(List.of());
+
+        var result = orderService.getLatestOrders(5);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void getLatestOrders_WhenRepositoryReturnsNull_ShouldReturnEmptyList() {
+        when(orderRepository.getLatestOrders(any(Pageable.class))).thenReturn(null);
+
+        var result = orderService.getLatestOrders(5);
+
+        assertThat(result).isEmpty();
     }
     
     @Test
@@ -293,7 +387,28 @@ class OrderServiceTest {
         com.yas.order.model.csv.OrderItemCsv csvMock = org.mockito.Mockito.mock(com.yas.order.model.csv.OrderItemCsv.class);
         when(orderMapper.toCsv(any())).thenReturn(csvMock);
 
-        byte[] result = orderService.exportCsv(request);        assertThat(result).isNotNull();
+        byte[] result = orderService.exportCsv(request);
+        assertThat(result).isNotNull();
+    }
+
+    @Test
+    void exportCsv_WhenOrderListIsNull_ShouldReturnEmptyCsv() throws IOException {
+        OrderRequest request = new OrderRequest();
+        request.setPageNo(0);
+        request.setPageSize(10);
+        request.setCreatedFrom(ZonedDateTime.now());
+        request.setCreatedTo(ZonedDateTime.now());
+        request.setProductName("product");
+        request.setOrderStatus(List.of(OrderStatus.COMPLETED));
+        request.setBillingCountry("VN");
+        request.setBillingPhoneNumber("123456");
+        request.setEmail("test@example.com");
+
+        Page<Order> emptyPage = Page.empty();
+        when(orderRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(emptyPage);
+
+        byte[] result = orderService.exportCsv(request);
+        assertThat(result).isNotNull();
     }
     
     @Test
@@ -308,9 +423,35 @@ class OrderServiceTest {
             assertThat(result).hasSize(1);
         }
     }
+
+    @Test
+    void getMyOrders_WhenOrderStatusIsNull_ShouldReturnOrderGetVms() {
+        when(orderRepository.findAll(any(Specification.class), any(Sort.class))).thenReturn(List.of(order));
+
+        try (org.mockito.MockedStatic<AuthenticationUtils> utilities = org.mockito.Mockito.mockStatic(AuthenticationUtils.class)) {
+            utilities.when(AuthenticationUtils::extractUserId).thenReturn("user123");
+
+            var result = orderService.getMyOrders("product", null);
+
+            assertThat(result).hasSize(1);
+        }
+    }
+
+    @Test
+    void getMyOrders_WhenNoOrders_ShouldReturnEmptyList() {
+        when(orderRepository.findAll(any(Specification.class), any(Sort.class))).thenReturn(List.of());
+
+        try (org.mockito.MockedStatic<AuthenticationUtils> utilities = org.mockito.Mockito.mockStatic(AuthenticationUtils.class)) {
+            utilities.when(AuthenticationUtils::extractUserId).thenReturn("user123");
+
+            var result = orderService.getMyOrders("product", OrderStatus.COMPLETED);
+
+            assertThat(result).isEmpty();
+        }
+    }
     
     @Test
-    void isOrderCompletedWithUserIdAndProductId_ShouldReturnVm() {
+    void isOrderCompletedWithUserIdAndProductId_WhenNoVariations_ShouldReturnVm() {
         when(productService.getProductVariations(1L)).thenReturn(List.of());
         when(orderRepository.findOne(any(Specification.class))).thenReturn(Optional.of(order));
         
@@ -321,6 +462,55 @@ class OrderServiceTest {
 
             assertThat(result).isNotNull();
             assertThat(result.isPresent()).isTrue();
+        }
+    }
+
+    @Test
+    void isOrderCompletedWithUserIdAndProductId_WhenHasVariations_ShouldUseVariationIds() {
+        List<ProductVariationVm> variations = List.of(
+            new ProductVariationVm(10L, "Variation A", "SKU-A"),
+            new ProductVariationVm(20L, "Variation B", "SKU-B")
+        );
+        when(productService.getProductVariations(1L)).thenReturn(variations);
+        when(orderRepository.findOne(any(Specification.class))).thenReturn(Optional.of(order));
+
+        try (org.mockito.MockedStatic<AuthenticationUtils> utilities = org.mockito.Mockito.mockStatic(AuthenticationUtils.class)) {
+            utilities.when(AuthenticationUtils::extractUserId).thenReturn("user123");
+
+            var result = orderService.isOrderCompletedWithUserIdAndProductId(1L);
+
+            assertThat(result).isNotNull();
+            assertThat(result.isPresent()).isTrue();
+        }
+    }
+
+    @Test
+    void isOrderCompletedWithUserIdAndProductId_WhenNullVariations_ShouldUseSingleProductId() {
+        when(productService.getProductVariations(1L)).thenReturn(null);
+        when(orderRepository.findOne(any(Specification.class))).thenReturn(Optional.empty());
+
+        try (org.mockito.MockedStatic<AuthenticationUtils> utilities = org.mockito.Mockito.mockStatic(AuthenticationUtils.class)) {
+            utilities.when(AuthenticationUtils::extractUserId).thenReturn("user123");
+
+            var result = orderService.isOrderCompletedWithUserIdAndProductId(1L);
+
+            assertThat(result).isNotNull();
+            assertThat(result.isPresent()).isFalse();
+        }
+    }
+
+    @Test
+    void isOrderCompletedWithUserIdAndProductId_WhenOrderNotFound_ShouldReturnFalse() {
+        when(productService.getProductVariations(1L)).thenReturn(List.of());
+        when(orderRepository.findOne(any(Specification.class))).thenReturn(Optional.empty());
+
+        try (org.mockito.MockedStatic<AuthenticationUtils> utilities = org.mockito.Mockito.mockStatic(AuthenticationUtils.class)) {
+            utilities.when(AuthenticationUtils::extractUserId).thenReturn("user123");
+
+            var result = orderService.isOrderCompletedWithUserIdAndProductId(1L);
+
+            assertThat(result).isNotNull();
+            assertThat(result.isPresent()).isFalse();
         }
     }
 }
