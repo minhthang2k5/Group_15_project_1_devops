@@ -94,8 +94,7 @@ pipeline {
                         sh "mvn clean test jacoco:report -pl ${serviceSelector} -am '-Dsurefire.excludes=**/*IT.java,**/*IT\$*.java,**/ProductCdcConsumerTest.java,**/ProductVectorRepositoryTest.java,**/VectorQueryTest.java'"
                     }
                 }
-            }
-
+            }           
             // Di chuyển logic upload sang Phase Test theo yêu cầu của bài
             post {
                 always {
