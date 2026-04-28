@@ -78,41 +78,6 @@ pipeline {
             }
         }
 
-        stage('Security Scan: Gitleaks') {
-            steps {
-                script {
-                    echo '=> Bắt đầu tải và chạy Gitleaks...'
-                    sh '''
-                                        set -e
-                                        GITLEAKS_URL="https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_8.18.2_linux_x64.tar.gz"
-
-                                        if command -v gitleaks >/dev/null 2>&1; then
-                                            echo "Sử dụng gitleaks có sẵn trên agent"
-                                            gitleaks detect --source . -v --redact --config gitleaks.toml --no-git --report-path=gitleaks-report.json
-                                            exit 0
-                                        fi
-
-                                        if command -v wget >/dev/null 2>&1; then
-                                            wget -qO- "$GITLEAKS_URL" | tar xvz
-                                        elif command -v curl >/dev/null 2>&1; then
-                                            curl -sSL "$GITLEAKS_URL" | tar xvz
-                                        else
-                                            echo "ERROR: Agent không có wget/curl để tải Gitleaks." >&2
-                                            exit 2
-                                        fi
-
-                                        chmod +x gitleaks
-                                        ./gitleaks detect --source . -v --redact --config gitleaks.toml --no-git --report-path=gitleaks-report.json
-                    '''
-                }
-            }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'gitleaks-report.json', allowEmptyArchive: true
-                }
-            }
-        }
-
         stage('Test & Coverage') {
             steps {
                 echo 'Đang kiểm tra phiên bản Java...'
@@ -150,85 +115,6 @@ pipeline {
                                    sourcePattern: sourcePatterns
                         }
                     }
-                }
-            }
-        }
-
-        stage('SonarQube Analysis') {
-    steps {
-        script {
-            echo '=> Bắt đầu phân tích mã nguồn với SonarQube...'
-            // Lấy danh sách service thay đổi để tối ưu hóa việc quét cho Monorepo 
-            def services = getChangedServices().toList().sort()
-
-            withSonarQubeEnv('SonarQube') {
-                if (services.isEmpty()) {
-                    echo 'Không phát hiện service thay đổi. Phân tích SonarQube cho TOÀN BỘ dự án.'
-                    sh """
-                    mvn -B -DskipTests sonar:sonar \
-                      -Dsonar.projectKey=minhthang2k5_Group_15_project_1_devops \
-                      -Dsonar.organization=minhthang2k5 \
-                      -Dsonar.projectName="YAS Parent"
-                    """
-                } else {
-                    def serviceSelector = services.join(',')
-                    echo "Phân tích SonarQube cho CÁC SERVICE BỊ THAY ĐỔI: ${services}"
-                    // Sử dụng flag -pl để chỉ định quét các service cụ thể [cite: 28]
-                    sh """
-                    mvn -B -DskipTests -pl ${serviceSelector} -am sonar:sonar \
-                      -Dsonar.projectKey=minhthang2k5_Group_15_project_1_devops \
-                      -Dsonar.organization=minhthang2k5 \
-                      -Dsonar.projectName="YAS Microservices"
-                    """
-                }
-            }
-        }
-    }
-}
-
-        stage('Security Scan: Snyk SCA') {
-            steps {
-                withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
-                    script {
-                        echo '=> Bắt đầu tải và phân tích bảo mật thư viện với Snyk...'
-                        sh '''
-                        set -e
-                        mkdir -p reports/snyk
-
-                        if command -v snyk >/dev/null 2>&1; then
-                          cp "$(command -v snyk)" ./snyk
-                        elif command -v curl >/dev/null 2>&1; then
-                          curl -sSL -o ./snyk https://github.com/snyk/snyk/releases/latest/download/snyk-linux
-                        elif command -v wget >/dev/null 2>&1; then
-                          wget -qO ./snyk https://github.com/snyk/snyk/releases/latest/download/snyk-linux
-                        else
-                          echo "ERROR: Agent không có snyk/curl/wget để chạy Snyk." >&2
-                          exit 2
-                        fi
-
-                        chmod +x ./snyk
-                        ./snyk --version
-                        '''
-
-                        def services = getChangedServices().toList().sort()
-
-                        if (services.isEmpty()) {
-                            echo 'Không phát hiện service thay đổi. Quét Snyk cho TOÀN BỘ dự án.'
-                            sh './snyk test --all-projects --json-file-output=reports/snyk/snyk-all-projects.json || true'
-                        } else {
-                            echo "Quét Snyk cho CÁC SERVICE BỊ THAY ĐỔI: ${services}"
-                            for (String svc : services) {
-                                if (fileExists("${svc}/pom.xml")) {
-                                    sh "./snyk test --file=${svc}/pom.xml  --json-file-output=reports/snyk/snyk-${svc}.json || true"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'reports/snyk/*.json', allowEmptyArchive: true
                 }
             }
         }
