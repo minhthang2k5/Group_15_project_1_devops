@@ -117,9 +117,7 @@ pipeline {
                     }
                 }
             }
-        }
 
-        stage('Test services summary') {
             steps {
                 script {
                     def services = getChangedServices().toList().sort()
@@ -136,6 +134,7 @@ pipeline {
                 }
             }
         }
+
 
         stage('Build') {
             steps {
