@@ -21,6 +21,7 @@ paths = [
   '''realm-export''',
   '''keycloak-yas-realm-import.yaml''',
   '''target''',
+  '''^README\.md$''',
   '''automation-ui/.*/LoginSteps\.java''',
   '''customer/src/(main|it)/resources/application\.properties''',
   '''k8s/deploy/cluster-config\.yaml''',
