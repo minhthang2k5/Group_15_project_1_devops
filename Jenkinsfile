@@ -91,7 +91,12 @@ pipeline {
                     } else {
                         def serviceSelector = services.join(',')
                         echo "Đang chạy Unit Test và tạo report Coverage cho CÁC SERVICE BỊ THAY ĐỔI: ${services}"
-                        sh "mvn clean test jacoco:report -pl ${serviceSelector} -am '-Dsurefire.excludes=**/*IT.java,**/*IT\$*.java,**/ProductCdcConsumerTest.java,**/ProductVectorRepositoryTest.java,**/VectorQueryTest.java'"
+                        sh "mvn -pl ${serviceSelector} -am clean"
+                        for (String svc : services) {
+                            stage("Test: ${svc}") {
+                                sh "mvn test jacoco:report -pl ${svc} -am '-Dsurefire.excludes=**/*IT.java,**/*IT\$*.java,**/ProductCdcConsumerTest.java,**/ProductVectorRepositoryTest.java,**/VectorQueryTest.java'"
+                            }
+                        }
                     }
                 }
             }
