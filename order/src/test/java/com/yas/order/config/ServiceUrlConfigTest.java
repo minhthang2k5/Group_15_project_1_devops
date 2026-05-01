@@ -4,9 +4,8 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ServiceUrlConfigTest {
-
     @Test
-    void testServiceUrlConfig() {
+    void testRecordMethods() {
         ServiceUrlConfig config = new ServiceUrlConfig("cartUrl", "customerUrl", "productUrl", "taxUrl", "promotionUrl");
         assertEquals("cartUrl", config.cart());
         assertEquals("customerUrl", config.customer());

@@ -1,31 +1,36 @@
 package com.yas.order.service;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.junit.jupiter.api.Test;
 
 class AbstractCircuitBreakFallbackHandlerTest {
 
-    private final TestCircuitBreakFallbackHandler handler = new TestCircuitBreakFallbackHandler();
+    // Concrete subclass for testing the abstract class
+    private static class TestHandler extends AbstractCircuitBreakFallbackHandler {
+        public void testHandleBodilessFallback(Throwable throwable) throws Throwable {
+            handleBodilessFallback(throwable);
+        }
 
-    @Test
-    void handleBodilessFallback_shouldRethrowException() {
-        RuntimeException exception = new RuntimeException("Test error");
-
-        assertThrows(Throwable.class, () -> handler.handleBodilessFallback(exception));
+        public <T> T testHandleTypedFallback(Throwable throwable) throws Throwable {
+            return handleTypedFallback(throwable);
+        }
     }
 
     @Test
-    void handleTypedFallback_shouldRethrowException() {
-        RuntimeException exception = new RuntimeException("Test error");
+    void handleBodilessFallback_ShouldRethrowException() {
+        TestHandler handler = new TestHandler();
+        RuntimeException ex = new RuntimeException("test error");
 
-        assertThrows(Throwable.class, () -> handler.handleTypedFallback(exception));
+        assertThrows(RuntimeException.class, () -> handler.testHandleBodilessFallback(ex));
     }
 
-    /**
-     * Concrete subclass for testing the abstract class.
-     */
-    static class TestCircuitBreakFallbackHandler extends AbstractCircuitBreakFallbackHandler {
+    @Test
+    void handleTypedFallback_ShouldRethrowException() {
+        TestHandler handler = new TestHandler();
+        RuntimeException ex = new RuntimeException("test error");
+
+        assertThrows(RuntimeException.class, () -> handler.testHandleTypedFallback(ex));
     }
 }
