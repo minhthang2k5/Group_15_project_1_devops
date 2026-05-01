@@ -1,28 +1,31 @@
 package com.yas.rating.utils;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class MessagesUtilsTest {
 
     @Test
-    void getMessage_whenKeyExists_shouldReturnFormattedMessage() {
-        // Use a known message code from messages.properties
-        String result = MessagesUtils.getMessage("RATING_NOT_FOUND", 123L);
-        assertThat(result).isNotNull();
-        assertThat(result).isNotEmpty();
+    void getMessage_WhenCodeExists_ReturnsMessage() {
+        // SUCCESS message in messages.properties
+        String message = MessagesUtils.getMessage("SUCCESS");
+        assertEquals("SUCCESS", message);
     }
 
     @Test
-    void getMessage_whenKeyDoesNotExist_shouldReturnKeyAsMessage() {
-        String result = MessagesUtils.getMessage("NON_EXISTENT_KEY");
-        assertThat(result).isEqualTo("NON_EXISTENT_KEY");
+    void getMessage_WhenCodeDoesNotExist_ReturnsErrorCode() {
+        String message = MessagesUtils.getMessage("NON_EXISTENT_CODE");
+        assertEquals("NON_EXISTENT_CODE", message);
     }
 
     @Test
-    void getMessage_whenKeyDoesNotExist_withArgs_shouldReturnKeyWithArgs() {
-        String result = MessagesUtils.getMessage("NON_EXISTENT_KEY_WITH_ARGS", "arg1", "arg2");
-        assertThat(result).isEqualTo("NON_EXISTENT_KEY_WITH_ARGS");
+    void getMessage_WithArguments() {
+        String message = MessagesUtils.getMessage("NON_EXISTENT_CODE {}", "arg");
+        assertEquals("NON_EXISTENT_CODE arg", message);
+    }
+
+    @Test
+    void testConstructor() {
+        org.junit.jupiter.api.Assertions.assertNotNull(new MessagesUtils());
     }
 }

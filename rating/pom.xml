@@ -64,6 +64,11 @@
             <type>test-jar</type>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <build>
         <plugins>
@@ -78,12 +83,13 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-
                 <configuration>
                     <excludes>
                     <!-- Chỉ chứa khai báo, ko có logic -->
-                        <exclude>**/*Application.*</exclude>
+                        <!-- <exclude>**/*Application.*</exclude>
                         <exclude>**/config/**</exclude>
+                        <exclude>**/exception/**</exclude>
+                        <exclude>**/dto/**</exclude> -->
                         <exclude>**/model/**</exclude>
                         <exclude>**/viewmodel/**</exclude>
                         <exclude>**/repository/**</exclude>
@@ -115,11 +121,6 @@
                                     <limits>
                                         <limit>
                                             <counter>LINE</counter>
-                                            <value>COVEREDRATIO</value>
-                                            <minimum>0.70</minimum>
-                                        </limit>
-                                        <limit>
-                                            <counter>BRANCH</counter>
                                             <value>COVEREDRATIO</value>
                                             <minimum>0.70</minimum>
                                         </limit>

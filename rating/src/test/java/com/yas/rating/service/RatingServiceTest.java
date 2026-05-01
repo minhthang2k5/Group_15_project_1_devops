@@ -183,6 +183,27 @@ class RatingServiceTest {
     }
 
     @Test
+    void createRating_CustomerNotFound_ShouldThrowNotFoundException() {
+        RatingPostVm ratingPostVm = RatingPostVm.builder().productId(1L).content("comment 4").productName("product3").star(4).build();
+
+        Jwt jwt = mock(Jwt.class);
+        JwtAuthenticationToken authentication = mock(JwtAuthenticationToken.class);
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        when(authentication.getToken()).thenReturn(jwt);
+        when(authentication.getName()).thenReturn(userId);
+        when(jwt.getSubject()).thenReturn(userId);
+
+        when(orderService.checkOrderExistsByProductAndUserWithStatus(anyLong())).thenReturn(new OrderExistsByProductAndUserGetVm(true));
+       // when(ratingRepository.existsByCreatedByAndProductId(userId, ratingPostVm.productId())).thenReturn(false);
+        when(customerService.getCustomer()).thenReturn(null);
+
+        NotFoundException exception = assertThrows(NotFoundException.class,
+                () -> ratingService.createRating(ratingPostVm));
+
+        assertEquals("CUSTOMER " + userId + " is not found", exception.getMessage());
+    }
+
+    @Test
     void deleteRating_ValidRatingId_ShouldSuccess() {
         Long id = ratingRepository.findAll().getFirst().getId();
         ratingService.deleteRating(id);
@@ -241,29 +262,4 @@ class RatingServiceTest {
         List<RatingVm>  newResponse = ratingService.getLatestRatings(5);
         assertEquals(0, newResponse.size());
     }
-
-    @Test
-    void createRating_WhenCustomerIsNull_ShouldThrowNotFoundException() {
-        Jwt jwt = mock(Jwt.class);
-        JwtAuthenticationToken authentication = mock(JwtAuthenticationToken.class);
-        SecurityContextHolder.getContext().setAuthentication(authentication);
-        when(authentication.getToken()).thenReturn(jwt);
-        when(authentication.getName()).thenReturn("newUser");
-        when(jwt.getSubject()).thenReturn("newUser");
-        when(orderService.checkOrderExistsByProductAndUserWithStatus(anyLong()))
-                .thenReturn(new OrderExistsByProductAndUserGetVm(true));
-        when(customerService.getCustomer()).thenReturn(null);
-
-        RatingPostVm ratingPostVm = RatingPostVm.builder()
-                .content("comment 5")
-                .productName("product5")
-                .star(5)
-                .productId(5L)
-                .build();
-
-        NotFoundException exception = assertThrows(NotFoundException.class,
-                () -> ratingService.createRating(ratingPostVm));
-
-        assertEquals("CUSTOMER newUser is not found", exception.getMessage());
-    }
-}
+}
