@@ -11,7 +11,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 public class ProductApplication {
 
     public static void main(String[] args) {
-        // test for product
         SpringApplication.run(ProductApplication.class, args);
     }
 
