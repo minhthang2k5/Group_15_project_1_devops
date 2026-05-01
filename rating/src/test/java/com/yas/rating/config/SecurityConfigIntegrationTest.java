@@ -26,8 +26,11 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+
 @WebMvcTest(controllers = RatingController.class)
 @Import(SecurityConfig.class)
+@EnableWebSecurity
 class SecurityConfigIntegrationTest {
 
     @MockitoBean
