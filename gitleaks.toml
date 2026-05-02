@@ -20,5 +20,14 @@ paths = [
   '''test-realm.json''',
   '''realm-export''',
   '''keycloak-yas-realm-import.yaml''',
-  '''target'''
+  '''target''',
+  '''^README\.md$''',
+  '''automation-ui/.*/LoginSteps\.java''',
+  '''customer/src/(main|it)/resources/application\.properties''',
+  '''k8s/deploy/cluster-config\.yaml''',
+  '''k8s/charts/yas-configuration/values\.yaml''',
+  '''payment/src/main/resources/db/changelog/data/changelog-0001-provider\.sql''',
+  '''identity/realm-export\.json''',
+  '''recommendation/src/test/resources/test-realm\.json''',
+  '''search/src/test/java/resources/test-realm\.json'''
 ]
