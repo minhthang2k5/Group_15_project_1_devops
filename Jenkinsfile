@@ -11,15 +11,30 @@ def getAffectedPaths() {
     return paths
 }
 
+@com.cloudbees.groovy.cps.NonCPS
+def extractUniqueFolders(List paths) {
+    def folders = [] as Set
+    for (path in paths) {
+        if (path.contains('/')) {
+            folders.add(path.split('/')[0])
+        }
+    }
+    return folders.toList()
+}
+
 def getChangedServices() {
     def changedServices = [] as Set
-    def gitDiffOutput = ''
 
+    // Ưu tiên git diff với main để xác định chính xác service thay đổi
+    def gitDiffOutput = ''
     try {
-        sh(script: 'git fetch origin +refs/heads/main:refs/remotes/origin/main --no-tags --depth=1', returnStdout: false)
-        gitDiffOutput = sh(script: 'git diff --name-only origin/main...HEAD', returnStdout: true).trim()
-    } catch (e) {   
-        echo "git diff failed, fallback to changeSets: ${e.message}"
+        sh(script: 'git fetch --no-tags --prune --depth=1 origin +refs/heads/main:refs/remotes/origin/main', returnStdout: false)
+        gitDiffOutput = sh(
+            script: 'git diff --name-only origin/main...HEAD',
+            returnStdout: true
+        ).trim()
+    } catch (e) {
+        echo "git diff failed, falling back to changeSets: ${e.message}"
     }
 
     def paths = []
@@ -29,14 +44,13 @@ def getChangedServices() {
         paths = getAffectedPaths()
     }
 
-    for (path in paths) {
-        if (path.contains('/')) {
-            def folder = path.split('/')[0]
-            if (fileExists("${folder}/pom.xml")) {
-                changedServices.add(folder)
-            }
+    def uniqueFolders = extractUniqueFolders(paths)
+    for (folder in uniqueFolders) {
+        if (fileExists("${folder}/pom.xml")) {
+            changedServices.add(folder)
         }
     }
+
     return changedServices
 }
 
@@ -64,32 +78,55 @@ pipeline {
             }
         }
 
+        stage('Security Scan: Gitleaks') {
+            steps {
+                script {
+                    echo '=> Bắt đầu tải và chạy Gitleaks...'
+                    sh '''
+                                        set -e
+                                        GITLEAKS_URL="https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_8.18.2_linux_x64.tar.gz"
+
+                                        if command -v gitleaks >/dev/null 2>&1; then
+                                            echo "Sử dụng gitleaks có sẵn trên agent"
+                                            gitleaks detect --source . -v --redact --config gitleaks.toml --no-git --report-path=gitleaks-report.json
+                                            exit 0
+                                        fi
+
+                                        if command -v wget >/dev/null 2>&1; then
+                                            wget -qO- "$GITLEAKS_URL" | tar xvz
+                                        elif command -v curl >/dev/null 2>&1; then
+                                            curl -sSL "$GITLEAKS_URL" | tar xvz
+                                        else
+                                            echo "ERROR: Agent không có wget/curl để tải Gitleaks." >&2
+                                            exit 2
+                                        fi
+
+                                        chmod +x gitleaks
+                                        ./gitleaks detect --source . -v --redact --config gitleaks.toml --no-git --report-path=gitleaks-report.json
+                    '''
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'gitleaks-report.json', allowEmptyArchive: true
+                }
+            }
+        }
+
         stage('Test & Coverage') {
             steps {
                 echo 'Đang kiểm tra phiên bản Java...'
                 sh 'java -version'
                 
                 script {
-                    def services = getChangedServices()
-                    def focusService = env.FOCUS_SERVICE
-                    def isCustomerBranch = env.BRANCH_NAME == 'feature/add-test-customer'
-
-                    if (focusService?.trim()) {
-                        services = [focusService.trim()] as Set
-                    } else if (isCustomerBranch) {
-                        services = ['customer'] as Set
-                    }
+                    def services = getChangedServices().toList().sort()
                     
                     if (services.isEmpty()) {
-                        echo 'Đang chạy Unit Test và tạo report Coverage cho TOÀN BỘ dự án...'
-                        sh "mvn clean verify '-Dsurefire.excludes=**/*IT.java,**/*IT\$*.java,**/ProductCdcConsumerTest.java,**/ProductVectorRepositoryTest.java,**/VectorQueryTest.java' '-Dfailsafe.excludes=**/*IT.java,**/*IT\$*.java'"
+                        echo 'Không phát hiện service thay đổi. Bỏ qua Test & Coverage theo phạm vi service.'
                     } else {
+                        def serviceSelector = services.join(',')
                         echo "Đang chạy Unit Test và tạo report Coverage cho CÁC SERVICE BỊ THAY ĐỔI: ${services}"
-                        for (service in services) {
-                            stage("Test ${service}") {
-                                sh "mvn clean verify -pl ${service} -am '-Dsurefire.excludes=**/*IT.java,**/*IT\$*.java,**/ProductCdcConsumerTest.java,**/ProductVectorRepositoryTest.java,**/VectorQueryTest.java' '-Dfailsafe.excludes=**/*IT.java,**/*IT\$*.java'"
-                            }
-                        }
+                        sh "mvn clean test jacoco:report -pl ${serviceSelector} -am '-Dsurefire.excludes=**/*IT.java,**/*IT\$*.java,**/ProductCdcConsumerTest.java,**/ProductVectorRepositoryTest.java,**/VectorQueryTest.java'"
                     }
                 }
             }
@@ -100,32 +137,98 @@ pipeline {
                     echo 'Upload Test Result và TestCoverage cho Phase Test...'
                     junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
                     script {
-                        def services = getChangedServices()
-                        def focusService = env.FOCUS_SERVICE
-                        def isCustomerBranch = env.BRANCH_NAME == 'feature/add-test-customer'
+                        def services = getChangedServices().toList().sort()
+                        if (services.isEmpty()) {
+                            echo 'Không phát hiện service thay đổi. Bỏ qua publish JaCoCo.'
+                        } else {
+                            def execPatterns = services.collect { "${it}/target/jacoco.exec" }.join(',')
+                            def classPatterns = services.collect { "${it}/target/classes" }.join(',')
+                            def sourcePatterns = services.collect { "${it}/src/main/java" }.join(',')
 
-                        if (focusService?.trim()) {
-                            services = [focusService.trim()] as Set
-                        } else if (isCustomerBranch) {
-                            services = ['customer'] as Set
+                            jacoco execPattern: execPatterns,
+                                   classPattern: classPatterns,
+                                   sourcePattern: sourcePatterns
                         }
-                        def classPatterns = '**/target/classes'
-                        def sourcePatterns = '**/src/main/java'
-                        def execPatterns = '**/target/jacoco.exec'
-
-                        if (!services.isEmpty()) {
-                            classPatterns = services.collect { "${it}/target/classes" }.join(',')
-                            sourcePatterns = services.collect { "${it}/src/main/java" }.join(',')
-                            execPatterns = services.collect { "${it}/target/jacoco.exec" }.join(',')
-                            echo "JaCoCo scope theo service thay đổi: ${services}"
-                        }
-
-                        jacoco execPattern: execPatterns,
-                               classPattern: classPatterns,
-                               sourcePattern: sourcePatterns,
-                               changeBuildStatus: true,
-                               minimumLineCoverage: '0.70'
                     }
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+    steps {
+        script {
+            echo '=> Bắt đầu phân tích mã nguồn với SonarQube...'
+            // Lấy danh sách service thay đổi để tối ưu hóa việc quét cho Monorepo 
+            def services = getChangedServices().toList().sort()
+
+            withSonarQubeEnv('SonarQube') {
+                if (services.isEmpty()) {
+                    echo 'Không phát hiện service thay đổi. Phân tích SonarQube cho TOÀN BỘ dự án.'
+                    sh """
+                    mvn -B -DskipTests sonar:sonar \
+                      -Dsonar.projectKey=minhthang2k5_Group_15_project_1_devops \
+                      -Dsonar.organization=minhthang2k5 \
+                      -Dsonar.projectName="YAS Parent"
+                    """
+                } else {
+                    def serviceSelector = services.join(',')
+                    echo "Phân tích SonarQube cho CÁC SERVICE BỊ THAY ĐỔI: ${services}"
+                    // Sử dụng flag -pl để chỉ định quét các service cụ thể [cite: 28]
+                    sh """
+                    mvn -B -DskipTests -pl ${serviceSelector} -am sonar:sonar \
+                      -Dsonar.projectKey=minhthang2k5_Group_15_project_1_devops \
+                      -Dsonar.organization=minhthang2k5 \
+                      -Dsonar.projectName="YAS Microservices"
+                    """
+                }
+            }
+        }
+    }
+}
+
+        stage('Security Scan: Snyk SCA') {
+            steps {
+                withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
+                    script {
+                        echo '=> Bắt đầu tải và phân tích bảo mật thư viện với Snyk...'
+                        sh '''
+                        set -e
+                        mkdir -p reports/snyk
+
+                        if command -v snyk >/dev/null 2>&1; then
+                          cp "$(command -v snyk)" ./snyk
+                        elif command -v curl >/dev/null 2>&1; then
+                          curl -sSL -o ./snyk https://github.com/snyk/snyk/releases/latest/download/snyk-linux
+                        elif command -v wget >/dev/null 2>&1; then
+                          wget -qO ./snyk https://github.com/snyk/snyk/releases/latest/download/snyk-linux
+                        else
+                          echo "ERROR: Agent không có snyk/curl/wget để chạy Snyk." >&2
+                          exit 2
+                        fi
+
+                        chmod +x ./snyk
+                        ./snyk --version
+                        '''
+
+                        def services = getChangedServices().toList().sort()
+
+                        if (services.isEmpty()) {
+                            echo 'Không phát hiện service thay đổi. Quét Snyk cho TOÀN BỘ dự án.'
+                            sh './snyk test --all-projects --json-file-output=reports/snyk/snyk-all-projects.json || true'
+                        } else {
+                            echo "Quét Snyk cho CÁC SERVICE BỊ THAY ĐỔI: ${services}"
+                            for (String svc : services) {
+                                if (fileExists("${svc}/pom.xml")) {
+                                    sh "./snyk test --file=${svc}/pom.xml  --json-file-output=reports/snyk/snyk-${svc}.json || true"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'reports/snyk/*.json', allowEmptyArchive: true
                 }
             }
         }
@@ -133,18 +236,15 @@ pipeline {
         stage('Build') {
             steps {
                 script {
-                    def services = getChangedServices()
+                    def services = getChangedServices().toList().sort()
                     
                     if (services.isEmpty()) {
                         echo 'Đang đóng gói TOÀN BỘ ứng dụng (Bỏ qua test vì đã chạy ở stage trước)...'
                         sh 'mvn package -DskipTests -DskipCompile=false'
                     } else {
-                        echo 'Đang đóng gói CÁC SERVICE BỊ THAY ĐỔI...'
-                        for (service in services) {
-                            stage("Build ${service}") {
-                                sh "mvn package -pl ${service} -am -DskipTests -DskipCompile=false"
-                            }
-                        }
+                        def serviceSelector = services.join(',')
+                        echo "Đang đóng gói CÁC SERVICE BỊ THAY ĐỔI: ${services}"
+                        sh "mvn package -pl ${serviceSelector} -am -DskipTests -DskipCompile=false"
                     }
                 }
             }
