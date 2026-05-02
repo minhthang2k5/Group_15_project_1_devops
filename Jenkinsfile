@@ -30,7 +30,7 @@ def getChangedServices() {
     try {
         sh(script: 'git fetch --no-tags --prune --depth=1 origin +refs/heads/main:refs/remotes/origin/main', returnStdout: false)
         gitDiffOutput = sh(
-            script: 'git diff --name-only origin/main..HEAD',
+            script: 'git diff --name-only origin/main...HEAD',
             returnStdout: true
         ).trim()
     } catch (e) {
