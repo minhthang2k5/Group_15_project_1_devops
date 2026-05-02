@@ -1,5 +1,5 @@
 package com.yas.tax.controller;
-//add scan
+//add scans
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
