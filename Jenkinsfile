@@ -152,7 +152,10 @@ pipeline {
 
                             jacoco execPattern: execPatterns,
                                    classPattern: classPatterns,
-                                   sourcePattern: sourcePatterns
+                                   sourcePattern: sourcePatterns,
+                                    exclusionPattern: '**/model/**,**/viewmodel/**,**/repository/**,**/*Application.class,**/config/**,**/exception/**,**/constants/**',
+                                    changeBuildStatus: true,
+                                    minimumLineCoverage: '70'
                         }
                     }
                 }
