@@ -1,5 +1,5 @@
 package com.yas.search.config;
-
+//test scan seachs
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
 
 public class ElasticTestContainer extends ElasticsearchContainer {
