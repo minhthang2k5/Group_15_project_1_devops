@@ -5,7 +5,7 @@
 replicaCount: 1
 
 image:
-  repository: ""
+  repository: ghcr.io/nashtech-garage/yas-backoffice-bff
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
@@ -46,10 +46,12 @@ deployment:
     reloader.stakater.com/search: "true"
   extraAnnotations: []
 
-extraEnvs: []
+extraEnvs: #[]
 #  - name: EXTRA_VARIABLE_NAME
 #    value: extra variable data
-
+  - name: SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_ISSUER_URI
+    value: http://34.142.221.97/realms/Yas
+    
 extraEnvFroms: []
 #  - secretRef:
 #      name: secret-name-extra
