@@ -25,14 +25,23 @@ def extractUniqueFolders(List paths) {
 def getChangedServices() {
     def changedServices = [] as Set
 
-    // Ưu tiên git diff với main để xác định chính xác service thay đổi
     def gitDiffOutput = ''
     try {
-        sh(script: 'git fetch --no-tags --prune --depth=1 origin +refs/heads/main:refs/remotes/origin/main', returnStdout: false)
-        gitDiffOutput = sh(
-            script: 'git diff --name-only origin/main...HEAD',
-            returnStdout: true
-        ).trim()
+        // Trên nhánh main: so sánh với commit trước đó (HEAD~1)
+        // Trên nhánh dev: so sánh với origin/main
+        if (env.BRANCH_NAME == 'main' || env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main') {
+            echo 'Đang trên nhánh main. So sánh với commit trước đó (HEAD~1)...'
+            gitDiffOutput = sh(
+                script: 'git diff --name-only HEAD~1',
+                returnStdout: true
+            ).trim()
+        } else {
+            sh(script: 'git fetch --no-tags --prune --depth=1 origin +refs/heads/main:refs/remotes/origin/main', returnStdout: false)
+            gitDiffOutput = sh(
+                script: 'git diff --name-only origin/main...HEAD',
+                returnStdout: true
+            ).trim()
+        }
     } catch (e) {
         echo "git diff failed, falling back to changeSets: ${e.message}"
     }
