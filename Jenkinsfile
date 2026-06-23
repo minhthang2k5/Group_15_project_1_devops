@@ -161,16 +161,10 @@ pipeline {
             // Lấy danh sách service thay đổi để tối ưu hóa việc quét cho Monorepo 
             def services = getChangedServices().toList().sort()
 
-            withSonarQubeEnv('SonarQube') {
-                if (services.isEmpty()) {
-                    echo 'Không phát hiện service thay đổi. Phân tích SonarQube cho TOÀN BỘ dự án.'
-                    sh """
-                    mvn -B -DskipTests sonar:sonar \
-                      -Dsonar.projectKey=minhthang2k5_Group_15_project_1_devops \
-                      -Dsonar.organization=minhthang2k5 \
-                      -Dsonar.projectName="YAS Parent"
-                    """
-                } else {
+            if (services.isEmpty()) {
+                echo 'Không phát hiện service thay đổi. Bỏ qua phân tích SonarQube.'
+            } else {
+                withSonarQubeEnv('SonarQube') {
                     def serviceSelector = services.join(',')
                     echo "Phân tích SonarQube cho CÁC SERVICE BỊ THAY ĐỔI: ${services}"
                     // Sử dụng flag -pl để chỉ định quét các service cụ thể [cite: 28]
@@ -245,6 +239,67 @@ pipeline {
                         def serviceSelector = services.join(',')
                         echo "Đang đóng gói CÁC SERVICE BỊ THAY ĐỔI: ${services}"
                         sh "mvn package -pl ${serviceSelector} -am -DskipTests -DskipCompile=false"
+                    }
+                }
+            }
+        }
+
+        stage('Build & Push Docker Image') {
+            steps {
+                script {
+                    echo '=> Bắt đầu Build và Push Docker Image lên Docker Hub...'
+                    
+                    // Danh sách toàn bộ 14 services dựa theo tài liệu thiết kế hệ thống
+                    def allServices = [
+                        'product', 'cart', 'order', 'customer', 
+                        'inventory', 'tax', 'media', 'search', 
+                        'storefront-bff', 'storefront-ui', 
+                        'backoffice-bff', 'backoffice-ui', 
+                        'swagger-ui', 'sampledata'
+                    ]
+                    
+                    // Lấy 7 ký tự đầu của commit ID
+                    def commitHash = env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'latest'
+                    
+                    // Xác định danh sách service cần build và tag tương ứng
+                    def servicesToBuild = []
+                    def imageTag = ''
+                    
+                    if (env.BRANCH_NAME == 'main') {
+                        echo "Phát hiện nhánh 'main'. Sẽ tiến hành build TOÀN BỘ ${allServices.size()} services..."
+                        servicesToBuild = allServices
+                        imageTag = 'latest' // Hoặc bạn có thể đổi thành 'main' tùy ý
+                    } else {
+                        servicesToBuild = getChangedServices().toList().sort()
+                        imageTag = commitHash
+                        echo "Phát hiện nhánh dev. Chỉ build các services thay đổi: ${servicesToBuild}"
+                    }
+
+                    if (servicesToBuild.isEmpty()) {
+                        echo "Không có service nào cần build image."
+                    } else {
+                        // Nhúng ID của Credentials Docker Hub
+                        withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials-id', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
+                            
+                            // Đăng nhập Docker Hub
+                            sh '''
+                                echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                            '''
+                            
+                            for (String svc : servicesToBuild) {
+                                echo "Đang Build và Push image cho service: ${svc} | Tag: ${imageTag}"
+                                
+                                def imageName = "${env.DOCKER_USER}/${svc}:${imageTag}"
+                                
+                                // Bỏ qua nếu thư mục service không tồn tại (tránh lỗi pipeline)
+                                if (fileExists("./${svc}")) {
+                                    sh "docker build -t ${imageName} ./${svc}"
+                                    sh "docker push ${imageName}"
+                                } else {
+                                    echo "CẢNH BÁO: Không tìm thấy thư mục ./${svc}. Bỏ qua..."
+                                }
+                            }
+                        }
                     }
                 }
             }
