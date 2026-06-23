@@ -258,13 +258,13 @@ pipeline {
                 script {
                     echo '=> Bắt đầu Build và Push Docker Image lên Docker Hub...'
                     
-                    // Danh sách toàn bộ 14 services dựa theo tài liệu thiết kế hệ thống
+                    // Danh sách toàn bộ services dựa theo thư mục thực tế trong repo
                     def allServices = [
                         'product', 'cart', 'order', 'customer', 
                         'inventory', 'tax', 'media', 'search', 
-                        'storefront-bff', 'storefront-ui', 
-                        'backoffice-bff', 'backoffice-ui', 
-                        'swagger-ui', 'sampledata'
+                        'storefront-bff', 'storefront', 
+                        'backoffice-bff', 'backoffice', 
+                        'sampledata'
                     ]
                     
                     // Lấy 7 ký tự đầu của commit ID
