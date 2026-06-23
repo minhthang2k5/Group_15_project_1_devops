@@ -161,16 +161,10 @@ pipeline {
             // Lấy danh sách service thay đổi để tối ưu hóa việc quét cho Monorepo 
             def services = getChangedServices().toList().sort()
 
-            withSonarQubeEnv('SonarQube') {
-                if (services.isEmpty()) {
-                    echo 'Không phát hiện service thay đổi. Phân tích SonarQube cho TOÀN BỘ dự án.'
-                    sh """
-                    mvn -B -DskipTests sonar:sonar \
-                      -Dsonar.projectKey=minhthang2k5_Group_15_project_1_devops \
-                      -Dsonar.organization=minhthang2k5 \
-                      -Dsonar.projectName="YAS Parent"
-                    """
-                } else {
+            if (services.isEmpty()) {
+                echo 'Không phát hiện service thay đổi. Bỏ qua phân tích SonarQube.'
+            } else {
+                withSonarQubeEnv('SonarQube') {
                     def serviceSelector = services.join(',')
                     echo "Phân tích SonarQube cho CÁC SERVICE BỊ THAY ĐỔI: ${services}"
                     // Sử dụng flag -pl để chỉ định quét các service cụ thể [cite: 28]
