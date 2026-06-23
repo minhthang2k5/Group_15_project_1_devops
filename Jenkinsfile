@@ -258,15 +258,6 @@ pipeline {
                 script {
                     echo '=> Bắt đầu Build và Push Docker Image lên Docker Hub...'
                     
-                    // Danh sách toàn bộ services dựa theo thư mục thực tế trong repo
-                    def allServices = [
-                        'product', 'cart', 'order', 'customer', 
-                        'inventory', 'tax', 'media', 'search', 
-                        'storefront-bff', 'storefront', 
-                        'backoffice-bff', 'backoffice', 
-                        'sampledata'
-                    ]
-                    
                     // Lấy 7 ký tự đầu của commit ID
                     def commitHash = env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'latest'
                     
@@ -274,18 +265,27 @@ pipeline {
                     def servicesToBuild = []
                     def imageTag = ''
                     
-                    if (env.BRANCH_NAME == 'main') {
-                        echo "Phát hiện nhánh 'main'. Sẽ tiến hành build TOÀN BỘ ${allServices.size()} services..."
-                        servicesToBuild = allServices
-                        imageTag = 'latest' // Hoặc bạn có thể đổi thành 'main' tùy ý
+                    // Nhất quán với getChangedServices(): kiểm tra cả BRANCH_NAME và GIT_BRANCH
+                    def isMainBranch = (env.BRANCH_NAME == 'main' || env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main')
+                    
+                    if (isMainBranch) {
+                        // Nhánh main: chỉ build CÁC SERVICE THAY ĐỔI, tag = 'latest'
+                        servicesToBuild = getChangedServices().toList().sort()
+                        imageTag = 'latest'
+                        echo "Phát hiện nhánh 'main'. Chỉ build CÁC SERVICE THAY ĐỔI: ${servicesToBuild} | Tag: ${imageTag}"
                     } else {
+                        // Yêu cầu #3: User branch → chỉ build services thay đổi so với main
+                        // Tag = <commitHash> (commit ID cuối cùng của branch đó)
                         servicesToBuild = getChangedServices().toList().sort()
                         imageTag = commitHash
-                        echo "Phát hiện nhánh dev. Chỉ build các services thay đổi: ${servicesToBuild}"
+                        
+                        // Lấy tên nhánh để log
+                        def rawBranch = env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'dev'
+                        echo "Phát hiện user branch '${rawBranch}'. Chỉ build CÁC SERVICE THAY ĐỔI: ${servicesToBuild} | Tag: ${imageTag}"
                     }
 
                     if (servicesToBuild.isEmpty()) {
-                        echo "Không có service nào cần build image."
+                        echo "⏭️  Không có service nào thay đổi → Bỏ qua Build & Push Docker Image."
                     } else {
                         // Nhúng ID của Credentials Docker Hub
                         withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials-id', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
@@ -304,6 +304,7 @@ pipeline {
                                 if (fileExists("./${svc}")) {
                                     sh "docker build -t ${imageName} ./${svc}"
                                     sh "docker push ${imageName}"
+                                    echo "✅ Đã push thành công: ${imageName}"
                                 } else {
                                     echo "CẢNH BÁO: Không tìm thấy thư mục ./${svc}. Bỏ qua..."
                                 }
