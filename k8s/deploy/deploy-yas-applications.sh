@@ -32,6 +32,7 @@ sleep 60
 
 helm upgrade --install swagger-ui ../charts/swagger-ui \
 --namespace yas --create-namespace \
+--set ingress.enabled=false \
 --set ingress.host="api.$DOMAIN"
 
 sleep 20
