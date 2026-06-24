@@ -1,0 +1,144 @@
+def SERVICES = [
+    [name: 'backend',           param: 'BACKEND_BRANCH',           chart: 'k8s/charts/backend',           image: 'backend'],
+    [name: 'tax',               param: 'TAX_BRANCH',               chart: 'k8s/charts/tax',               image: 'tax'],
+    [name: 'payment',           param: 'PAYMENT_BRANCH',           chart: 'k8s/charts/payment',           image: 'payment'],
+    [name: 'inventory',         param: 'INVENTORY_BRANCH',         chart: 'k8s/charts/inventory',         image: 'inventory'],
+    [name: 'promotion',         param: 'PROMOTION_BRANCH',         chart: 'k8s/charts/promotion',         image: 'promotion'],
+    [name: 'rating',            param: 'RATING_BRANCH',            chart: 'k8s/charts/rating',            image: 'rating'],
+    [name: 'customer',          param: 'CUSTOMER_BRANCH',          chart: 'k8s/charts/customer',          image: 'customer'],
+    [name: 'storefront-ui',     param: 'STOREFRONT_UI_BRANCH',     chart: 'k8s/charts/storefront-ui',     image: 'storefront-ui'],
+    [name: 'backoffice-bff',    param: 'BACKOFFICE_BFF_BRANCH',    chart: 'k8s/charts/backoffice-bff',    image: 'backoffice-bff'],
+    [name: 'sampledata',        param: 'SAMPLEDATA_BRANCH',        chart: 'k8s/charts/sampledata',        image: 'sampledata'],
+    [name: 'webhook',           param: 'WEBHOOK_BRANCH',           chart: 'k8s/charts/webhook',           image: 'webhook'],
+    [name: 'yas-configuration', param: 'YAS_CONFIGURATION_BRANCH', chart: 'k8s/charts/yas-configuration', image: 'yas-configuration']
+]
+
+def NODEPORT_SERVICES = [
+    'storefront-ui'
+]
+
+pipeline {
+    agent any
+
+    environment {
+        APP_REPO_URL  = 'https://github.com/minhthang2k5/Group_15_project_1_devops.git'
+        DOCKERHUB_ORG = 'minhthangzxc'
+        CHARTS_PATH   = 'k8s/charts'
+        DEFAULT_TAG   = 'latest'
+        TAG_LENGTH    = '7'
+    }
+
+    parameters {
+        string(name: 'ENV_NAME', defaultValue: 'developer', description: 'Tên môi trường test')
+
+        string(name: 'BACKEND_BRANCH', defaultValue: 'main')
+        string(name: 'TAX_BRANCH', defaultValue: 'main')
+        string(name: 'PAYMENT_BRANCH', defaultValue: 'main')
+        string(name: 'INVENTORY_BRANCH', defaultValue: 'main')
+        string(name: 'PROMOTION_BRANCH', defaultValue: 'main')
+        string(name: 'RATING_BRANCH', defaultValue: 'main')
+        string(name: 'CUSTOMER_BRANCH', defaultValue: 'main')
+        string(name: 'STOREFRONT_UI_BRANCH', defaultValue: 'main')
+        string(name: 'BACKOFFICE_BFF_BRANCH', defaultValue: 'main')
+        string(name: 'SAMPLEDATA_BRANCH', defaultValue: 'main')
+        string(name: 'WEBHOOK_BRANCH', defaultValue: 'main')
+        string(name: 'YAS_CONFIGURATION_BRANCH', defaultValue: 'main')
+    }
+
+    stages {
+        stage('Prepare Namespace') {
+            steps {
+                script {
+                    env.NAMESPACE = "yas-dev-${params.ENV_NAME}".toLowerCase()
+
+                    sh """
+                        kubectl create namespace ${env.NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+                    """
+                }
+            }
+        }
+
+        stage('Resolve Image Tags') {
+            steps {
+                script {
+                    SERVICES.each { svc ->
+                        def branchName = params[svc.param]?.trim()
+
+                        if (!branchName || branchName == 'main') {
+                            svc.tag = env.DEFAULT_TAG
+                        } else {
+                            def fullSha = sh(
+                                script: "git ls-remote ${env.APP_REPO_URL} refs/heads/${branchName} | awk '{print \\$1}'",
+                                returnStdout: true
+                            ).trim()
+
+                            if (!fullSha) {
+                                error "Không tìm thấy branch '${branchName}' cho service ${svc.name}"
+                            }
+
+                            svc.tag = fullSha.take(env.TAG_LENGTH.toInteger())
+                        }
+
+                        echo "${svc.name} -> branch=${branchName}, imageTag=${svc.tag}"
+                    }
+                }
+            }
+        }
+
+        stage('Deploy Services') {
+            steps {
+                script {
+                    SERVICES.each { svc ->
+                        def serviceType = NODEPORT_SERVICES.contains(svc.name) ? 'NodePort' : 'ClusterIP'
+
+                        sh """
+                            helm upgrade --install ${svc.name} ${svc.chart} \
+                              --namespace ${env.NAMESPACE} \
+                              --set image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
+                              --set image.tag=${svc.tag} \
+                              --set service.type=${serviceType} \
+                              --wait \
+                              --timeout 10m
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Show Access URLs') {
+            steps {
+                script {
+                    echo "=========================================================="
+                    echo "Deploy thành công!"
+                    echo "Namespace: ${env.NAMESPACE}"
+                    echo ""
+                    echo "Thêm dòng sau vào file hosts:"
+                    echo "34.87.111.72 storefront-ui.${env.NAMESPACE}.local"
+                    echo ""
+
+                    NODEPORT_SERVICES.each { svc ->
+                        def nodePort = sh(
+                            script: "kubectl get svc ${svc} -n ${env.NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}'",
+                            returnStdout: true
+                        ).trim()
+
+                        echo "${svc}: http://${svc}.${env.NAMESPACE}.local:${nodePort}"
+                    }
+
+                    echo "=========================================================="
+                }
+            }
+        }
+
+        stage('Generate Cleanup Link') {
+            steps {
+                script {
+                    echo "=========================================================="
+                    echo "Deploy thành công! Click vào đường dẫn dưới đây để dọn dẹp môi trường test khi xong việc:"
+                    echo "http://34.87.111.72:8080/job/developer_clean/buildWithParameters?token=yas-destroy-token&TARGET_NAMESPACE=${env.NAMESPACE}"
+                    echo "=========================================================="
+                }
+            }
+        }
+    }
+}
