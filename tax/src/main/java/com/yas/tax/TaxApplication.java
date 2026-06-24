@@ -10,6 +10,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 @EnableConfigurationProperties({ServiceUrlConfig.class, CorsConfig.class})
 public class TaxApplication {
 
+    // test for dev
     public static void main(String[] args) {
         SpringApplication.run(TaxApplication.class, args);
     }
