@@ -1,5 +1,5 @@
 package com.yas.product.config;
-
+//test scan product service
 import java.util.Optional;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.context.annotation.Bean;
