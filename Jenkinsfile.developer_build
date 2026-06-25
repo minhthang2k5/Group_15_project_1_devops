@@ -9,8 +9,7 @@ def SERVICES = [
     [name: 'storefront-ui',     param: 'STOREFRONT_UI_BRANCH',     chart: 'k8s/charts/storefront-ui',     image: 'storefront-ui'],
     [name: 'backoffice-bff',    param: 'BACKOFFICE_BFF_BRANCH',    chart: 'k8s/charts/backoffice-bff',    image: 'backoffice-bff'],
     [name: 'sampledata',        param: 'SAMPLEDATA_BRANCH',        chart: 'k8s/charts/sampledata',        image: 'sampledata'],
-    [name: 'webhook',           param: 'WEBHOOK_BRANCH',           chart: 'k8s/charts/webhook',           image: 'webhook'],
-    [name: 'yas-configuration', param: 'YAS_CONFIGURATION_BRANCH', chart: 'k8s/charts/yas-configuration', image: 'yas-configuration']
+    [name: 'webhook',           param: 'WEBHOOK_BRANCH',           chart: 'k8s/charts/webhook',           image: 'webhook']
 ]
 
 def NODEPORT_SERVICES = [
@@ -42,7 +41,6 @@ pipeline {
         string(name: 'BACKOFFICE_BFF_BRANCH', defaultValue: 'main')
         string(name: 'SAMPLEDATA_BRANCH', defaultValue: 'main')
         string(name: 'WEBHOOK_BRANCH', defaultValue: 'main')
-        string(name: 'YAS_CONFIGURATION_BRANCH', defaultValue: 'main')
     }
 
     stages {
@@ -58,16 +56,16 @@ pipeline {
             }
         }
 
-    stage('Deploy Configuration') {
-        steps {
-            sh """
-                helm upgrade --install yas-configuration k8s/charts/yas-configuration \
-                --namespace ${env.NAMESPACE} \
-                --wait \
-                --timeout 5m
-            """
+        stage('Deploy Configuration') {
+            steps {
+                sh """
+                    helm upgrade --install yas-configuration k8s/charts/yas-configuration \
+                    --namespace ${env.NAMESPACE} \
+                    --wait \
+                    --timeout 5m
+                """
+            }
         }
-    }
 
         stage('Resolve Image Tags') {
             steps {
