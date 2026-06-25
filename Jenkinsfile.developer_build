@@ -59,6 +59,9 @@ pipeline {
         stage('Deploy Configuration') {
             steps {
                 sh """
+
+                    helm dependency build k8s/charts/yas-configuration
+
                     helm upgrade --install yas-configuration k8s/charts/yas-configuration \
                     --namespace ${env.NAMESPACE} \
                     --wait \
@@ -102,6 +105,8 @@ pipeline {
                         def serviceType = NODEPORT_SERVICES.contains(svc.name) ? 'NodePort' : 'ClusterIP'
 
                         sh """
+                            helm dependency build ${svc.chart} || true
+
                             helm upgrade --install ${svc.name} ${svc.chart} \
                               --namespace ${env.NAMESPACE} \
                               --set image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
