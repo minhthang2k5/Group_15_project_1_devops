@@ -1,5 +1,5 @@
 def SERVICES = [
-    [name: 'backend',           param: 'BACKEND_BRANCH',           chart: 'k8s/charts/backend',           image: 'backend'],
+    [name: 'backend',           param: 'BACKEND_BRANCH',           chart: 'k8s/charts/backend',           image: 'backoffice-bff'],
     [name: 'tax',               param: 'TAX_BRANCH',               chart: 'k8s/charts/tax',               image: 'tax'],
     [name: 'payment',           param: 'PAYMENT_BRANCH',           chart: 'k8s/charts/payment',           image: 'payment'],
     [name: 'inventory',         param: 'INVENTORY_BRANCH',         chart: 'k8s/charts/inventory',         image: 'inventory'],
