@@ -58,33 +58,44 @@ pipeline {
             }
         }
 
-				stage('Resolve Image Tags') {
-					steps {
-							script {
-									SERVICES.each { svc ->
-											def branchName = params[svc.param]?.trim()
+    stage('Deploy Configuration') {
+        steps {
+            sh """
+                helm upgrade --install yas-configuration k8s/charts/yas-configuration \
+                --namespace ${env.NAMESPACE} \
+                --wait \
+                --timeout 5m
+            """
+        }
+    }
 
-											if (!branchName || branchName == 'main') {
-													svc.tag = env.DEFAULT_TAG
-											} else {
-													def fullSha = sh(
-															script: "git ls-remote ${env.APP_REPO_URL} refs/heads/${branchName} | cut -f1",
-															returnStdout: true
-													).trim()
+        stage('Resolve Image Tags') {
+            steps {
+                    script {
+                            SERVICES.each { svc ->
+                                    def branchName = params[svc.param]?.trim()
 
-													if (!fullSha) {
-															error "Không tìm thấy branch '${branchName}' cho service ${svc.name}"
-													}
+                                    if (!branchName || branchName == 'main') {
+                                            svc.tag = env.DEFAULT_TAG
+                                    } else {
+                                            def fullSha = sh(
+                                                    script: "git ls-remote ${env.APP_REPO_URL} refs/heads/${branchName} | cut -f1",
+                                                    returnStdout: true
+                                            ).trim()
 
-													svc.tag = fullSha.take(env.TAG_LENGTH.toInteger())
-											}
+                                            if (!fullSha) {
+                                                    error "Không tìm thấy branch '${branchName}' cho service ${svc.name}"
+                                            }
 
-											echo "${svc.name} -> branch=${branchName}, imageTag=${svc.tag}"
-									}
-							}
-					}
-			
-				}
+                                            svc.tag = fullSha.take(env.TAG_LENGTH.toInteger())
+                                    }
+
+                                    echo "${svc.name} -> branch=${branchName}, imageTag=${svc.tag}"
+                            }
+                    }
+            }
+    
+        }
 
         stage('Deploy Services') {
             steps {
