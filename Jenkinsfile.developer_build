@@ -73,16 +73,6 @@ pipeline {
             }
         }
 
-        stage('Copy Required Secrets') {
-            steps {
-                sh """
-                    kubectl get secret yas-postgresql-credentials-secret -n dev -o yaml \
-                      | sed '/^[[:space:]]*namespace:/d;/^[[:space:]]*resourceVersion:/d;/^[[:space:]]*uid:/d;/^[[:space:]]*creationTimestamp:/d' \
-                      | kubectl apply -n ${env.NAMESPACE} -f -
-                """
-            }
-        }
-
         stage('Create DockerHub Pull Secret') {
             steps {
                 withCredentials([usernamePassword(
