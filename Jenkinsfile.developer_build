@@ -155,6 +155,7 @@ pipeline {
                                   --set backend.image.tag=${svc.tag} \
                                   --set 'backend.imagePullSecrets[0].name=dockerhub-secret' \
                                   --set backend.service.type=${serviceType} \
+                                  --set backend.ingress.enabled=false \
                                   --wait \
                                   --timeout 10m
                             """
@@ -170,6 +171,7 @@ pipeline {
                                   --set ui.image.tag=${svc.tag} \
                                   --set 'ui.imagePullSecrets[0].name=dockerhub-secret' \
                                   --set ui.service.type=${serviceType} \
+                                  --set ui.ingress.enabled=false \
                                   --wait \
                                   --timeout 10m
                             """
@@ -182,6 +184,7 @@ pipeline {
                                 helm upgrade --install ${svc.name} ${svc.chart} \
                                   --namespace ${env.NAMESPACE} \
                                   --set service.type=${serviceType} \
+                                  --set ingress.enabled=false \
                                   --wait \
                                   --timeout 10m
                             """
