@@ -1,19 +1,26 @@
 def SERVICES = [
-    [name: 'backend',           param: 'BACKEND_BRANCH',           chart: 'k8s/charts/backend',           image: 'backoffice-bff'],
-    [name: 'tax',               param: 'TAX_BRANCH',               chart: 'k8s/charts/tax',               image: 'tax'],
-    [name: 'payment',           param: 'PAYMENT_BRANCH',           chart: 'k8s/charts/payment',           image: 'payment'],
-    [name: 'inventory',         param: 'INVENTORY_BRANCH',         chart: 'k8s/charts/inventory',         image: 'inventory'],
-    [name: 'promotion',         param: 'PROMOTION_BRANCH',         chart: 'k8s/charts/promotion',         image: 'promotion'],
-    [name: 'rating',            param: 'RATING_BRANCH',            chart: 'k8s/charts/rating',            image: 'rating'],
-    [name: 'customer',          param: 'CUSTOMER_BRANCH',          chart: 'k8s/charts/customer',          image: 'customer'],
-    [name: 'storefront-ui',     param: 'STOREFRONT_UI_BRANCH',     chart: 'k8s/charts/storefront-ui',     image: 'storefront-ui'],
-    [name: 'backoffice-bff',    param: 'BACKOFFICE_BFF_BRANCH',    chart: 'k8s/charts/backoffice-bff',    image: 'backoffice-bff'],
-    [name: 'sampledata',        param: 'SAMPLEDATA_BRANCH',        chart: 'k8s/charts/sampledata',        image: 'sampledata'],
-    [name: 'webhook',           param: 'WEBHOOK_BRANCH',           chart: 'k8s/charts/webhook',           image: 'webhook']
+    [name: 'product',        param: 'PRODUCT_BRANCH',        chart: 'k8s/charts/product',        image: 'product',        chartType: 'backend'],
+    [name: 'cart',           param: 'CART_BRANCH',           chart: 'k8s/charts/cart',           image: 'cart',           chartType: 'backend'],
+    [name: 'order',          param: 'ORDER_BRANCH',          chart: 'k8s/charts/order',          image: 'order',          chartType: 'backend'],
+    [name: 'customer',       param: 'CUSTOMER_BRANCH',       chart: 'k8s/charts/customer',       image: 'customer',       chartType: 'backend'],
+    [name: 'inventory',      param: 'INVENTORY_BRANCH',      chart: 'k8s/charts/inventory',      image: 'inventory',      chartType: 'backend'],
+    [name: 'tax',            param: 'TAX_BRANCH',            chart: 'k8s/charts/tax',            image: 'tax',            chartType: 'backend'],
+    [name: 'media',          param: 'MEDIA_BRANCH',          chart: 'k8s/charts/media',          image: 'media',          chartType: 'backend'],
+    [name: 'search',         param: 'SEARCH_BRANCH',         chart: 'k8s/charts/search',         image: 'search',         chartType: 'backend'],
+    [name: 'storefront-bff', param: 'STOREFRONT_BFF_BRANCH', chart: 'k8s/charts/storefront-bff', image: 'storefront-bff', chartType: 'backend'],
+    [name: 'backoffice-bff', param: 'BACKOFFICE_BFF_BRANCH', chart: 'k8s/charts/backoffice-bff', image: 'backoffice-bff', chartType: 'backend'],
+
+    [name: 'storefront-ui',  param: 'STOREFRONT_UI_BRANCH',  chart: 'k8s/charts/storefront-ui',  image: 'storefront',    chartType: 'ui'],
+    [name: 'backoffice-ui',  param: 'BACKOFFICE_UI_BRANCH',  chart: 'k8s/charts/backoffice-ui',  image: 'backoffice',    chartType: 'ui'],
+
+    [name: 'swagger-ui',     param: null,                    chart: 'k8s/charts/swagger-ui',     image: '',             chartType: 'swagger'],
+    [name: 'sampledata',     param: 'SAMPLEDATA_BRANCH',     chart: 'k8s/charts/sampledata',     image: 'sampledata',    chartType: 'backend']
 ]
 
 def NODEPORT_SERVICES = [
-    'storefront-ui'
+    'storefront-ui',
+    'backoffice-ui',
+    'swagger-ui'
 ]
 
 pipeline {
@@ -22,25 +29,26 @@ pipeline {
     environment {
         APP_REPO_URL  = 'https://github.com/minhthang2k5/Group_15_project_1_devops.git'
         DOCKERHUB_ORG = 'minhthangzxc'
-        CHARTS_PATH   = 'k8s/charts'
         DEFAULT_TAG   = 'latest'
         TAG_LENGTH    = '7'
     }
 
     parameters {
-        string(name: 'ENV_NAME', defaultValue: 'developer', description: 'Tên môi trường test')
+        string(name: 'ENV_NAME', defaultValue: 'developer', description: 'Tên môi trường test, ví dụ: thang')
 
-        string(name: 'BACKEND_BRANCH', defaultValue: 'main')
-        string(name: 'TAX_BRANCH', defaultValue: 'main')
-        string(name: 'PAYMENT_BRANCH', defaultValue: 'main')
-        string(name: 'INVENTORY_BRANCH', defaultValue: 'main')
-        string(name: 'PROMOTION_BRANCH', defaultValue: 'main')
-        string(name: 'RATING_BRANCH', defaultValue: 'main')
+        string(name: 'PRODUCT_BRANCH', defaultValue: 'main')
+        string(name: 'CART_BRANCH', defaultValue: 'main')
+        string(name: 'ORDER_BRANCH', defaultValue: 'main')
         string(name: 'CUSTOMER_BRANCH', defaultValue: 'main')
-        string(name: 'STOREFRONT_UI_BRANCH', defaultValue: 'main')
+        string(name: 'INVENTORY_BRANCH', defaultValue: 'main')
+        string(name: 'TAX_BRANCH', defaultValue: 'main')
+        string(name: 'MEDIA_BRANCH', defaultValue: 'main')
+        string(name: 'SEARCH_BRANCH', defaultValue: 'main')
+        string(name: 'STOREFRONT_BFF_BRANCH', defaultValue: 'main')
         string(name: 'BACKOFFICE_BFF_BRANCH', defaultValue: 'main')
+        string(name: 'STOREFRONT_UI_BRANCH', defaultValue: 'main')
+        string(name: 'BACKOFFICE_UI_BRANCH', defaultValue: 'main')
         string(name: 'SAMPLEDATA_BRANCH', defaultValue: 'main')
-        string(name: 'WEBHOOK_BRANCH', defaultValue: 'main')
     }
 
     stages {
@@ -56,46 +64,89 @@ pipeline {
             }
         }
 
+        stage('Prepare Helm Repos') {
+            steps {
+                sh """
+                    helm repo add stakater https://stakater.github.io/stakater-charts || true
+                    helm repo update
+                """
+            }
+        }
+
+        stage('Copy Required Secrets') {
+            steps {
+                sh """
+                    kubectl get secret yas-postgresql-credentials-secret -n dev -o yaml \
+                      | sed '/^[[:space:]]*namespace:/d;/^[[:space:]]*resourceVersion:/d;/^[[:space:]]*uid:/d;/^[[:space:]]*creationTimestamp:/d' \
+                      | kubectl apply -n ${env.NAMESPACE} -f -
+                """
+            }
+        }
+
+        stage('Create DockerHub Pull Secret') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-credentials-id',
+                    usernameVariable: 'DOCKERHUB_USERNAME',
+                    passwordVariable: 'DOCKERHUB_PASSWORD'
+                )]) {
+                    sh """
+                        kubectl delete secret dockerhub-secret -n ${env.NAMESPACE} --ignore-not-found
+
+                        kubectl create secret docker-registry dockerhub-secret \
+                          --docker-server=https://index.docker.io/v1/ \
+                          --docker-username="\$DOCKERHUB_USERNAME" \
+                          --docker-password="\$DOCKERHUB_PASSWORD" \
+                          --docker-email=no-email@example.com \
+                          -n ${env.NAMESPACE}
+                    """
+                }
+            }
+        }
+
         stage('Deploy Configuration') {
             steps {
                 sh """
-
                     helm dependency build k8s/charts/yas-configuration
 
                     helm upgrade --install yas-configuration k8s/charts/yas-configuration \
-                    --namespace ${env.NAMESPACE} \
-                    --wait \
-                    --timeout 5m
+                      --namespace ${env.NAMESPACE} \
+                      --wait \
+                      --timeout 5m
                 """
             }
         }
 
         stage('Resolve Image Tags') {
             steps {
-                    script {
-                            SERVICES.each { svc ->
-                                    def branchName = params[svc.param]?.trim()
+                script {
+                    SERVICES.each { svc ->
+                        if (svc.chartType == 'swagger') {
+                            svc.tag = ''
+                            echo "${svc.name} -> uses default public image from chart"
+                        } else {
+                            def branchName = params[svc.param]?.trim()
 
-                                    if (!branchName || branchName == 'main') {
-                                            svc.tag = env.DEFAULT_TAG
-                                    } else {
-                                            def fullSha = sh(
-                                                    script: "git ls-remote ${env.APP_REPO_URL} refs/heads/${branchName} | cut -f1",
-                                                    returnStdout: true
-                                            ).trim()
+                            if (!branchName || branchName == 'main') {
+                                svc.tag = env.DEFAULT_TAG
+                            } else {
+                                def fullSha = sh(
+                                    script: "git ls-remote ${env.APP_REPO_URL} refs/heads/${branchName} | cut -f1",
+                                    returnStdout: true
+                                ).trim()
 
-                                            if (!fullSha) {
-                                                    error "Không tìm thấy branch '${branchName}' cho service ${svc.name}"
-                                            }
+                                if (!fullSha) {
+                                    error "Không tìm thấy branch '${branchName}' cho service ${svc.name}"
+                                }
 
-                                            svc.tag = fullSha.take(env.TAG_LENGTH.toInteger())
-                                    }
-
-                                    echo "${svc.name} -> branch=${branchName}, imageTag=${svc.tag}"
+                                svc.tag = fullSha.take(env.TAG_LENGTH.toInteger())
                             }
+
+                            echo "${svc.name} -> branch=${branchName}, imageTag=${svc.tag}"
+                        }
                     }
+                }
             }
-    
         }
 
         stage('Deploy Services') {
@@ -104,17 +155,47 @@ pipeline {
                     SERVICES.each { svc ->
                         def serviceType = NODEPORT_SERVICES.contains(svc.name) ? 'NodePort' : 'ClusterIP'
 
-                        sh """
-                            helm dependency build ${svc.chart} || true
+                        if (svc.chartType == 'backend') {
+                            sh """
+                                helm dependency build ${svc.chart}
 
-                            helm upgrade --install ${svc.name} ${svc.chart} \
-                              --namespace ${env.NAMESPACE} \
-                              --set image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
-                              --set image.tag=${svc.tag} \
-                              --set service.type=${serviceType} \
-                              --wait \
-                              --timeout 10m
-                        """
+                                helm upgrade --install ${svc.name} ${svc.chart} \
+                                  --namespace ${env.NAMESPACE} \
+                                  --set backend.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
+                                  --set backend.image.tag=${svc.tag} \
+                                  --set 'backend.imagePullSecrets[0].name=dockerhub-secret' \
+                                  --set backend.service.type=${serviceType} \
+                                  --wait \
+                                  --timeout 10m
+                            """
+                        }
+
+                        if (svc.chartType == 'ui') {
+                            sh """
+                                helm dependency build ${svc.chart}
+
+                                helm upgrade --install ${svc.name} ${svc.chart} \
+                                  --namespace ${env.NAMESPACE} \
+                                  --set ui.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
+                                  --set ui.image.tag=${svc.tag} \
+                                  --set 'ui.imagePullSecrets[0].name=dockerhub-secret' \
+                                  --set ui.service.type=${serviceType} \
+                                  --wait \
+                                  --timeout 10m
+                            """
+                        }
+
+                        if (svc.chartType == 'swagger') {
+                            sh """
+                                helm dependency build ${svc.chart} || true
+
+                                helm upgrade --install ${svc.name} ${svc.chart} \
+                                  --namespace ${env.NAMESPACE} \
+                                  --set service.type=${serviceType} \
+                                  --wait \
+                                  --timeout 10m
+                            """
+                        }
                     }
                 }
             }
@@ -127,8 +208,10 @@ pipeline {
                     echo "Deploy thành công!"
                     echo "Namespace: ${env.NAMESPACE}"
                     echo ""
-                    echo "Thêm dòng sau vào file hosts:"
+                    echo "Thêm các dòng sau vào file hosts:"
                     echo "34.87.111.72 storefront-ui.${env.NAMESPACE}.local"
+                    echo "34.87.111.72 backoffice-ui.${env.NAMESPACE}.local"
+                    echo "34.87.111.72 swagger-ui.${env.NAMESPACE}.local"
                     echo ""
 
                     NODEPORT_SERVICES.each { svc ->
@@ -149,7 +232,7 @@ pipeline {
             steps {
                 script {
                     echo "=========================================================="
-                    echo "Deploy thành công! Click vào đường dẫn dưới đây để dọn dẹp môi trường test khi xong việc:"
+                    echo "Click vào đường dẫn dưới đây để dọn dẹp môi trường test khi xong việc:"
                     echo "http://34.87.111.72:8080/job/developer_clean/buildWithParameters?token=yas-destroy-token&TARGET_NAMESPACE=${env.NAMESPACE}"
                     echo "=========================================================="
                 }
