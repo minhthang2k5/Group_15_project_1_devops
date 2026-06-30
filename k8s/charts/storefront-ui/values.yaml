@@ -19,6 +19,8 @@ ui:
   extraEnvs:
     - name: API_BASE_PATH
       value: http://storefront.yas.local.com/api
+    - name: HOSTNAME
+      value: "0.0.0.0"
   ingress:
     enabled: false
 
