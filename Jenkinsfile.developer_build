@@ -1,5 +1,4 @@
 def SERVICES = [
-    // Backend/business services first
     [name: 'product',        param: 'PRODUCT_BRANCH',        chart: 'k8s/charts/product',        image: 'product',        chartType: 'backend'],
     [name: 'cart',           param: 'CART_BRANCH',           chart: 'k8s/charts/cart',           image: 'cart',           chartType: 'backend'],
     [name: 'order',          param: 'ORDER_BRANCH',          chart: 'k8s/charts/order',          image: 'order',          chartType: 'backend'],
@@ -8,22 +7,16 @@ def SERVICES = [
     [name: 'tax',            param: 'TAX_BRANCH',            chart: 'k8s/charts/tax',            image: 'tax',            chartType: 'backend'],
     [name: 'media',          param: 'MEDIA_BRANCH',          chart: 'k8s/charts/media',          image: 'media',          chartType: 'backend'],
     [name: 'search',         param: 'SEARCH_BRANCH',         chart: 'k8s/charts/search',         image: 'search',         chartType: 'backend'],
-    [name: 'sampledata',     param: 'SAMPLEDATA_BRANCH',     chart: 'k8s/charts/sampledata',     image: 'sampledata',     chartType: 'backend'],
-
-    // UI services are internal only. Browser should NOT enter these directly.
-    [name: 'storefront-ui',  param: 'STOREFRONT_UI_BRANCH',  chart: 'k8s/charts/storefront-ui',  image: 'storefront',     chartType: 'ui'],
-    [name: 'backoffice-ui',  param: 'BACKOFFICE_UI_BRANCH',  chart: 'k8s/charts/backoffice-ui',  image: 'backoffice',     chartType: 'ui'],
-
-    // BFF services are the public entrypoints.
     [name: 'storefront-bff', param: 'STOREFRONT_BFF_BRANCH', chart: 'k8s/charts/storefront-bff', image: 'storefront-bff', chartType: 'backend'],
     [name: 'backoffice-bff', param: 'BACKOFFICE_BFF_BRANCH', chart: 'k8s/charts/backoffice-bff', image: 'backoffice-bff', chartType: 'backend'],
 
-    [name: 'swagger-ui',     param: null,                    chart: 'k8s/charts/swagger-ui',     image: '',              chartType: 'swagger']
+    [name: 'storefront-ui',  param: 'STOREFRONT_UI_BRANCH',  chart: 'k8s/charts/storefront-ui',  image: 'storefront',     chartType: 'ui'],
+    [name: 'backoffice-ui',  param: 'BACKOFFICE_UI_BRANCH',  chart: 'k8s/charts/backoffice-ui',  image: 'backoffice',     chartType: 'ui'],
+
+    [name: 'swagger-ui',     param: null,                    chart: 'k8s/charts/swagger-ui',     image: '',              chartType: 'swagger'],
+    [name: 'sampledata',     param: 'SAMPLEDATA_BRANCH',     chart: 'k8s/charts/sampledata',     image: 'sampledata',     chartType: 'backend']
 ]
 
-// Expose BFF, not UI.
-// storefront-bff serves storefront-ui and routes /api to services in the same namespace.
-// backoffice-bff serves backoffice-ui and routes /api to services in the same namespace.
 def NODEPORT_SERVICES = [
     'storefront-bff',
     'backoffice-bff',
@@ -34,15 +27,11 @@ pipeline {
     agent any
 
     environment {
-        APP_REPO_URL     = 'https://github.com/minhthang2k5/Group_15_project_1_devops.git'
-        DOCKERHUB_ORG    = 'minhthangzxc'
-        DEFAULT_TAG      = 'latest'
-        TAG_LENGTH       = '7'
-
-        // Public IP of the Kubernetes node/VM that developers access through NodePort.
-        PUBLIC_NODE_IP   = '34.142.221.97'
-
-        // Jenkins URL used only for the cleanup link. Change this if your Jenkins URL is different.
+        APP_REPO_URL  = 'https://github.com/minhthang2k5/Group_15_project_1_devops.git'
+        DOCKERHUB_ORG = 'minhthangzxc'
+        DEFAULT_TAG   = 'latest'
+        TAG_LENGTH    = '7'
+        PUBLIC_NODE_IP = '34.142.221.97'
         JENKINS_BASE_URL = 'http://34.87.111.72:8080'
     }
 
@@ -72,11 +61,6 @@ pipeline {
 
                     sh """
                         kubectl create namespace ${env.NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
-
-                        # developer_build is a lightweight temporary namespace, not the Service Mesh demo namespace.
-                        # Keep Istio disabled here so it does not inject sidecars and break rollout/resource usage.
-                        kubectl label namespace ${env.NAMESPACE} istio-injection=disabled --overwrite
-                        kubectl label namespace ${env.NAMESPACE} istio.io/rev- --overwrite || true
                     """
                 }
             }
@@ -174,46 +158,47 @@ pipeline {
                                   --set 'backend.imagePullSecrets[0].name=dockerhub-secret' \
                                   --set backend.service.type=${serviceType} \
                                   --set backend.ingress.enabled=false \
-                                  --set-string 'backend.podAnnotations.sidecar\\.istio\\.io/inject=false' \
                                   --wait \
                                   --timeout 10m
                             """
                         }
 
                         if (svc.chartType == 'ui') {
-                            def extraEnvSet = ""
-
                             if (svc.name == 'storefront-ui') {
-                                // Browser enters storefront-bff. Therefore API_BASE_PATH must be relative.
-                                // /api will be handled by storefront-bff in the same namespace.
-                                extraEnvSet = """
-                                  --set 'ui.extraEnvs[0].name=API_BASE_PATH' \
-                                  --set 'ui.extraEnvs[0].value=/api' \
-                                  --set 'ui.extraEnvs[1].name=HOSTNAME' \
-                                  --set 'ui.extraEnvs[1].value=0.0.0.0'
+                                sh """
+                                    helm dependency build ${svc.chart}
+
+                                    helm upgrade --install ${svc.name} ${svc.chart} \
+                                      --namespace ${env.NAMESPACE} \
+                                      --set ui.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
+                                      --set ui.image.tag=${svc.tag} \
+                                      --set 'ui.imagePullSecrets[0].name=dockerhub-secret' \
+                                      --set ui.service.type=${serviceType} \
+                                      --set ui.ingress.enabled=false \
+                                      --set ui.extraEnvs[0].name=API_BASE_PATH \
+                                      --set ui.extraEnvs[0].value=/api \
+                                      --set ui.extraEnvs[1].name=HOSTNAME \
+                                      --set ui.extraEnvs[1].value=0.0.0.0 \
+                                      --wait \
+                                      --timeout 10m
                                 """
                             } else {
-                                extraEnvSet = """
-                                  --set 'ui.extraEnvs[0].name=HOSTNAME' \
-                                  --set 'ui.extraEnvs[0].value=0.0.0.0'
+                                sh """
+                                    helm dependency build ${svc.chart}
+
+                                    helm upgrade --install ${svc.name} ${svc.chart} \
+                                      --namespace ${env.NAMESPACE} \
+                                      --set ui.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
+                                      --set ui.image.tag=${svc.tag} \
+                                      --set 'ui.imagePullSecrets[0].name=dockerhub-secret' \
+                                      --set ui.service.type=${serviceType} \
+                                      --set ui.ingress.enabled=false \
+                                      --set ui.extraEnvs[0].name=HOSTNAME \
+                                      --set ui.extraEnvs[0].value=0.0.0.0 \
+                                      --wait \
+                                      --timeout 10m
                                 """
                             }
-
-                            sh """
-                                helm dependency build ${svc.chart}
-
-                                helm upgrade --install ${svc.name} ${svc.chart} \
-                                  --namespace ${env.NAMESPACE} \
-                                  --set ui.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
-                                  --set ui.image.tag=${svc.tag} \
-                                  --set 'ui.imagePullSecrets[0].name=dockerhub-secret' \
-                                  --set ui.service.type=${serviceType} \
-                                  --set ui.ingress.enabled=false \
-                                  --set-string 'ui.podAnnotations.sidecar\\.istio\\.io/inject=false' \
-                                  ${extraEnvSet} \
-                                  --wait \
-                                  --timeout 10m
-                            """
                         }
 
                         if (svc.chartType == 'swagger') {
@@ -224,7 +209,6 @@ pipeline {
                                   --namespace ${env.NAMESPACE} \
                                   --set service.type=${serviceType} \
                                   --set ingress.enabled=false \
-                                  --set-string 'podAnnotations.sidecar\\.istio\\.io/inject=false' \
                                   --wait \
                                   --timeout 10m
                             """
@@ -241,12 +225,7 @@ pipeline {
                     echo "Deploy thành công!"
                     echo "Namespace: ${env.NAMESPACE}"
                     echo ""
-                    echo "Thêm các dòng sau vào file hosts nếu muốn dùng domain nội bộ:"
-                    echo "${env.PUBLIC_NODE_IP} storefront-bff.${env.NAMESPACE}.local"
-                    echo "${env.PUBLIC_NODE_IP} backoffice-bff.${env.NAMESPACE}.local"
-                    echo "${env.PUBLIC_NODE_IP} swagger-ui.${env.NAMESPACE}.local"
-                    echo ""
-                    echo "Access URLs:"
+                    echo "Các URL truy cập:"
                     echo ""
 
                     NODEPORT_SERVICES.each { svc ->
@@ -255,11 +234,14 @@ pipeline {
                             returnStdout: true
                         ).trim()
 
-                        echo "${svc}:"
-                        echo "  Domain: http://${svc}.${env.NAMESPACE}.local:${nodePort}"
-                        echo "  Direct: http://${env.PUBLIC_NODE_IP}:${nodePort}"
+                        echo "${svc}: http://${env.PUBLIC_NODE_IP}:${nodePort}"
                     }
 
+                    echo ""
+                    echo "Lưu ý:"
+                    echo "- Dùng URL của storefront-bff để test Storefront"
+                    echo "- Dùng URL của backoffice-bff để test Backoffice"
+                    echo "- Không dùng storefront-ui/backoffice-ui trực tiếp"
                     echo "=========================================================="
                 }
             }
