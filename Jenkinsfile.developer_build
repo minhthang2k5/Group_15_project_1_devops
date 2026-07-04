@@ -159,44 +159,57 @@ pipeline {
                         def serviceType = NODEPORT_SERVICES.contains(svc.name) ? 'NodePort' : 'ClusterIP'
 
                         if (svc.chartType == 'backend') {
-                            def ingressEnabled = 'false'
-                            def ingressHost = ''
-                            def ingressExtraSet = ''
-
                             if (svc.name == 'storefront-bff') {
-                                ingressEnabled = 'true'
-                                ingressHost = env.STOREFRONT_HOST
-                                ingressExtraSet = """
-                                --set backend.ingress.host=${ingressHost} \\
-                                --set backend.ingress.path=/ \\
-                                --set backend.ingress.pathType=Prefix \\
-                                --set backend.ingress.className=nginx
+                                sh """
+                                    helm dependency build ${svc.chart}
+
+                                    helm upgrade --install ${svc.name} ${svc.chart} \
+                                    --namespace ${env.NAMESPACE} \
+                                    --set backend.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
+                                    --set backend.image.tag=${svc.tag} \
+                                    --set 'backend.imagePullSecrets[0].name=dockerhub-secret' \
+                                    --set backend.service.type=ClusterIP \
+                                    --set backend.ingress.enabled=true \
+                                    --set backend.ingress.host=${env.STOREFRONT_HOST} \
+                                    --set backend.ingress.path=/ \
+                                    --set backend.ingress.pathType=Prefix \
+                                    --set backend.ingress.className=nginx \
+                                    --wait \
+                                    --timeout 10m
                                 """
                             } else if (svc.name == 'backoffice-bff') {
-                                ingressEnabled = 'true'
-                                ingressHost = env.BACKOFFICE_HOST
-                                ingressExtraSet = """
-                                --set backend.ingress.host=${ingressHost} \\
-                                --set backend.ingress.path=/ \\
-                                --set backend.ingress.pathType=Prefix \\
-                                --set backend.ingress.className=nginx
+                                sh """
+                                    helm dependency build ${svc.chart}
+
+                                    helm upgrade --install ${svc.name} ${svc.chart} \
+                                    --namespace ${env.NAMESPACE} \
+                                    --set backend.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
+                                    --set backend.image.tag=${svc.tag} \
+                                    --set 'backend.imagePullSecrets[0].name=dockerhub-secret' \
+                                    --set backend.service.type=ClusterIP \
+                                    --set backend.ingress.enabled=true \
+                                    --set backend.ingress.host=${env.BACKOFFICE_HOST} \
+                                    --set backend.ingress.path=/ \
+                                    --set backend.ingress.pathType=Prefix \
+                                    --set backend.ingress.className=nginx \
+                                    --wait \
+                                    --timeout 10m
+                                """
+                            } else {
+                                sh """
+                                    helm dependency build ${svc.chart}
+
+                                    helm upgrade --install ${svc.name} ${svc.chart} \
+                                    --namespace ${env.NAMESPACE} \
+                                    --set backend.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
+                                    --set backend.image.tag=${svc.tag} \
+                                    --set 'backend.imagePullSecrets[0].name=dockerhub-secret' \
+                                    --set backend.service.type=ClusterIP \
+                                    --set backend.ingress.enabled=false \
+                                    --wait \
+                                    --timeout 10m
                                 """
                             }
-
-                            sh """
-                                helm dependency build ${svc.chart}
-
-                                helm upgrade --install ${svc.name} ${svc.chart} \
-                                --namespace ${env.NAMESPACE} \
-                                --set backend.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
-                                --set backend.image.tag=${svc.tag} \
-                                --set 'backend.imagePullSecrets[0].name=dockerhub-secret' \
-                                --set backend.service.type=ClusterIP \
-                                --set backend.ingress.enabled=${ingressEnabled} \
-                                ${ingressExtraSet} \
-                                --wait \
-                                --timeout 10m
-                            """
                         }
 
                         if (svc.chartType == 'ui') {
