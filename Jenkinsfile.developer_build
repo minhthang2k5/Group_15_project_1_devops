@@ -17,11 +17,7 @@ def SERVICES = [
     [name: 'sampledata',     param: 'SAMPLEDATA_BRANCH',     chart: 'k8s/charts/sampledata',     image: 'sampledata',     chartType: 'backend']
 ]
 
-def NODEPORT_SERVICES = [
-    'storefront-bff',
-    'backoffice-bff',
-    'swagger-ui'
-]
+def NODEPORT_SERVICES = []
 
 pipeline {
     agent any
@@ -59,9 +55,22 @@ pipeline {
                 script {
                     env.NAMESPACE = "yas-dev-${params.ENV_NAME}".toLowerCase()
 
+                    env.DEPLOY_DOMAIN = "${env.NAMESPACE}.local"
+                    env.STOREFRONT_HOST = "storefront.${env.DEPLOY_DOMAIN}"
+                    env.BACKOFFICE_HOST = "backoffice.${env.DEPLOY_DOMAIN}"
+                    env.API_HOST = "api.${env.DEPLOY_DOMAIN}"
+
                     sh """
                         kubectl create namespace ${env.NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+
+                        # Tránh bị Istio auto inject vào namespace test nếu cluster đang bật sidecar injection
+                        kubectl label namespace ${env.NAMESPACE} istio-injection=disabled --overwrite || true
                     """
+
+                    echo "Namespace: ${env.NAMESPACE}"
+                    echo "Storefront host: ${env.STOREFRONT_HOST}"
+                    echo "Backoffice host: ${env.BACKOFFICE_HOST}"
+                    echo "API host: ${env.API_HOST}"
                 }
             }
         }
@@ -102,9 +111,11 @@ pipeline {
                     helm dependency build k8s/charts/yas-configuration
 
                     helm upgrade --install yas-configuration k8s/charts/yas-configuration \
-                      --namespace ${env.NAMESPACE} \
-                      --wait \
-                      --timeout 5m
+                        --namespace ${env.NAMESPACE} \
+                        --set mediaApplicationConfig.yas.publicUrl=http://${env.API_HOST}/media \
+                        --set paymentPaypalApplicationConfig.yas.public.url=http://${env.STOREFRONT_HOST}/complete-payment \
+                        --wait \
+                        --timeout 5m
                 """
             }
         }
@@ -148,18 +159,43 @@ pipeline {
                         def serviceType = NODEPORT_SERVICES.contains(svc.name) ? 'NodePort' : 'ClusterIP'
 
                         if (svc.chartType == 'backend') {
+                            def ingressEnabled = 'false'
+                            def ingressHost = ''
+                            def ingressExtraSet = ''
+
+                            if (svc.name == 'storefront-bff') {
+                                ingressEnabled = 'true'
+                                ingressHost = env.STOREFRONT_HOST
+                                ingressExtraSet = """
+                                --set backend.ingress.host=${ingressHost} \\
+                                --set backend.ingress.path=/ \\
+                                --set backend.ingress.pathType=Prefix \\
+                                --set backend.ingress.className=nginx
+                                """
+                            } else if (svc.name == 'backoffice-bff') {
+                                ingressEnabled = 'true'
+                                ingressHost = env.BACKOFFICE_HOST
+                                ingressExtraSet = """
+                                --set backend.ingress.host=${ingressHost} \\
+                                --set backend.ingress.path=/ \\
+                                --set backend.ingress.pathType=Prefix \\
+                                --set backend.ingress.className=nginx
+                                """
+                            }
+
                             sh """
                                 helm dependency build ${svc.chart}
 
                                 helm upgrade --install ${svc.name} ${svc.chart} \
-                                  --namespace ${env.NAMESPACE} \
-                                  --set backend.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
-                                  --set backend.image.tag=${svc.tag} \
-                                  --set 'backend.imagePullSecrets[0].name=dockerhub-secret' \
-                                  --set backend.service.type=${serviceType} \
-                                  --set backend.ingress.enabled=false \
-                                  --wait \
-                                  --timeout 10m
+                                --namespace ${env.NAMESPACE} \
+                                --set backend.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
+                                --set backend.image.tag=${svc.tag} \
+                                --set 'backend.imagePullSecrets[0].name=dockerhub-secret' \
+                                --set backend.service.type=ClusterIP \
+                                --set backend.ingress.enabled=${ingressEnabled} \
+                                ${ingressExtraSet} \
+                                --wait \
+                                --timeout 10m
                             """
                         }
 
@@ -173,7 +209,7 @@ pipeline {
                                       --set ui.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
                                       --set ui.image.tag=${svc.tag} \
                                       --set 'ui.imagePullSecrets[0].name=dockerhub-secret' \
-                                      --set ui.service.type=${serviceType} \
+                                      --set ui.service.type=ClusterIP \
                                       --set ui.ingress.enabled=false \
                                       --set ui.extraEnvs[0].name=API_BASE_PATH \
                                       --set ui.extraEnvs[0].value=/api \
@@ -191,7 +227,7 @@ pipeline {
                                       --set ui.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
                                       --set ui.image.tag=${svc.tag} \
                                       --set 'ui.imagePullSecrets[0].name=dockerhub-secret' \
-                                      --set ui.service.type=${serviceType} \
+                                      --set ui.service.type=ClusterIP \
                                       --set ui.ingress.enabled=false \
                                       --set ui.extraEnvs[0].name=HOSTNAME \
                                       --set ui.extraEnvs[0].value=0.0.0.0 \
@@ -207,7 +243,7 @@ pipeline {
 
                                 helm upgrade --install ${svc.name} ${svc.chart} \
                                   --namespace ${env.NAMESPACE} \
-                                  --set service.type=${serviceType} \
+                                  --set service.type=ClusterIP \
                                   --set ingress.enabled=false \
                                   --wait \
                                   --timeout 10m
@@ -218,6 +254,32 @@ pipeline {
             }
         }
 
+        stage('Deploy Namespace API Gateway') {
+            steps {
+                sh '''
+                    set -e
+
+                    GATEWAY_FILE="/tmp/nginx-api-gateway-${NAMESPACE}.yaml"
+
+                    cp k8s/deploy/nginx-api-gateway.yaml "$GATEWAY_FILE"
+
+                    # Đổi namespace từ mẫu sang namespace test
+                    sed -i "s|namespace: yas$|namespace: ${NAMESPACE}|g" "$GATEWAY_FILE"
+
+                    # Đổi host API chính sang host API của namespace test
+                    sed -i "s|api.yas.local.com|${API_HOST}|g" "$GATEWAY_FILE"
+
+                    # Đổi upstream service từ namespace yas sang namespace test
+                    sed -i "s|.yas.svc.cluster.local|.${NAMESPACE}.svc.cluster.local|g" "$GATEWAY_FILE"
+
+                    echo "===== Generated namespace API gateway ====="
+                    grep -nE "namespace:|server_name|host:|svc.cluster.local" "$GATEWAY_FILE" | head -80
+
+                    kubectl apply -f "$GATEWAY_FILE"
+                '''
+            }
+        }
+
         stage('Show Access URLs') {
             steps {
                 script {
@@ -225,23 +287,22 @@ pipeline {
                     echo "Deploy thành công!"
                     echo "Namespace: ${env.NAMESPACE}"
                     echo ""
+                    echo "Thêm các dòng sau vào file hosts trên máy của bạn:"
+                    echo ""
+                    echo "${env.PUBLIC_NODE_IP} ${env.STOREFRONT_HOST}"
+                    echo "${env.PUBLIC_NODE_IP} ${env.BACKOFFICE_HOST}"
+                    echo "${env.PUBLIC_NODE_IP} ${env.API_HOST}"
+                    echo ""
                     echo "Các URL truy cập:"
                     echo ""
-
-                    NODEPORT_SERVICES.each { svc ->
-                        def nodePort = sh(
-                            script: "kubectl get svc ${svc} -n ${env.NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}'",
-                            returnStdout: true
-                        ).trim()
-
-                        echo "${svc}: http://${env.PUBLIC_NODE_IP}:${nodePort}"
-                    }
-
+                    echo "Storefront : http://${env.STOREFRONT_HOST}"
+                    echo "Backoffice : http://${env.BACKOFFICE_HOST}"
+                    echo "Swagger    : http://${env.API_HOST}/swagger-ui"
                     echo ""
                     echo "Lưu ý:"
-                    echo "- Dùng URL của storefront-bff để test Storefront"
-                    echo "- Dùng URL của backoffice-bff để test Backoffice"
-                    echo "- Không dùng storefront-ui/backoffice-ui trực tiếp"
+                    echo "- Browser vào storefront-bff/backoffice-bff qua domain, không vào UI trực tiếp"
+                    echo "- API/media/swagger đi qua nginx-api-gateway riêng của namespace test"
+                    echo "- Nếu test login, cần thêm redirect URI tương ứng trong Keycloak"
                     echo "=========================================================="
                 }
             }
