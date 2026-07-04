@@ -21,3 +21,21 @@ ingress:
   hosts:
     - *hostname
   tls: []
+
+livenessProbe:
+  enabled: true
+  path: /health
+  port: management
+  initialDelaySeconds: 120
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+
+readinessProbe:
+  enabled: true
+  path: /health
+  port: management
+  initialDelaySeconds: 120
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
