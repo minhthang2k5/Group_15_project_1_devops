@@ -28,7 +28,7 @@ pipeline {
         DEFAULT_TAG   = 'latest'
         TAG_LENGTH    = '7'
         PUBLIC_NODE_IP = '34.142.221.97'
-        JENKINS_BASE_URL = 'http://34.87.111.72:8080'
+        JENKINS_BASE_URL = 'http://34.142.221.97:8080'
     }
 
     parameters {
