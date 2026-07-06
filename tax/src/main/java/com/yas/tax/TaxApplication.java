@@ -10,7 +10,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 @EnableConfigurationProperties({ServiceUrlConfig.class, CorsConfig.class})
 public class TaxApplication {
 
-    // trigger ci
+    // trigger ci test
     public static void main(String[] args) {
         SpringApplication.run(TaxApplication.class, args);
     }
