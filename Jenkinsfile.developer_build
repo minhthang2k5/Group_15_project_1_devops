@@ -29,6 +29,10 @@ pipeline {
         TAG_LENGTH    = '7'
         PUBLIC_NODE_IP = '34.142.221.97'
         JENKINS_BASE_URL = 'http://34.142.221.97:8080'
+
+        MEDIA_ASSETS_SOURCE_DIR = 'sampledata/images'
+        MEDIA_STORAGE_PATH = '/images'
+        MEDIA_IMAGES_PVC = 'media-images-pvc'
     }
 
     parameters {
@@ -289,6 +293,102 @@ pipeline {
                     grep -nE "namespace:|server_name|host:|svc.cluster.local" "$GATEWAY_FILE" | head -80
 
                     kubectl apply -f "$GATEWAY_FILE"
+                '''
+            }
+        }
+
+        stage('Mount Media Images') {
+            steps {
+                sh '''
+                    set -e
+
+                    echo "=========================================================="
+                    echo "Mount media images"
+                    echo "Namespace : ${NAMESPACE}"
+                    echo "Source    : ${MEDIA_ASSETS_SOURCE_DIR}"
+                    echo "Target    : ${MEDIA_STORAGE_PATH}"
+                    echo "PVC       : ${MEDIA_IMAGES_PVC}"
+                    echo "=========================================================="
+
+                    if [ ! -d "${MEDIA_ASSETS_SOURCE_DIR}" ]; then
+                        echo "ERROR: Không tìm thấy folder ảnh: ${MEDIA_ASSETS_SOURCE_DIR}"
+                        echo "Danh sách file ảnh tìm thấy trong workspace:"
+                        find . -type f \\( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" \\) | head -80
+                        exit 1
+                    fi
+
+                    echo "Tạo PVC chứa ảnh nếu chưa có..."
+                    cat <<EOF | kubectl apply -n ${NAMESPACE} -f -
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+        name: ${MEDIA_IMAGES_PVC}
+        spec:
+        accessModes:
+            - ReadWriteOnce
+        resources:
+            requests:
+            storage: 1Gi
+        EOF
+
+                    echo "Mount PVC vào deployment/media tại ${MEDIA_STORAGE_PATH}..."
+                    MEDIA_CONTAINER=$(kubectl get deploy media -n ${NAMESPACE} -o jsonpath='{.spec.template.spec.containers[0].name}')
+
+                    kubectl set volume deployment/media \
+                    -n ${NAMESPACE} \
+                    --add \
+                    --overwrite \
+                    --name=media-images \
+                    --type=persistentVolumeClaim \
+                    --claim-name=${MEDIA_IMAGES_PVC} \
+                    --mount-path=${MEDIA_STORAGE_PATH} \
+                    --containers=${MEDIA_CONTAINER}
+
+                    kubectl rollout status deploy/media -n ${NAMESPACE} --timeout=5m
+
+                    echo "Tạo pod tạm để copy ảnh vào PVC..."
+                    kubectl delete pod media-images-loader -n ${NAMESPACE} --ignore-not-found=true
+
+                    cat <<EOF | kubectl apply -n ${NAMESPACE} -f -
+        apiVersion: v1
+        kind: Pod
+        metadata:
+        name: media-images-loader
+        spec:
+        restartPolicy: Never
+        containers:
+            - name: media-images-loader
+            image: busybox:1.36
+            command:
+                - sh
+                - -c
+                - "mkdir -p ${MEDIA_STORAGE_PATH} && sleep 3600"
+            volumeMounts:
+                - name: media-images
+                mountPath: ${MEDIA_STORAGE_PATH}
+        volumes:
+            - name: media-images
+            persistentVolumeClaim:
+                claimName: ${MEDIA_IMAGES_PVC}
+        EOF
+
+                    kubectl wait --for=condition=Ready pod/media-images-loader -n ${NAMESPACE} --timeout=120s
+
+                    echo "Copy ảnh từ Jenkins workspace vào PVC..."
+                    kubectl cp "${MEDIA_ASSETS_SOURCE_DIR}/." "${NAMESPACE}/media-images-loader:${MEDIA_STORAGE_PATH}/"
+
+                    echo "Verify ảnh đã được copy:"
+                    kubectl exec -n ${NAMESPACE} media-images-loader -- sh -c "find ${MEDIA_STORAGE_PATH} -type f | head -50"
+
+                    echo "Xóa pod copy tạm..."
+                    kubectl delete pod media-images-loader -n ${NAMESPACE} --ignore-not-found=true
+
+                    echo "Restart media để đọc lại ảnh..."
+                    kubectl rollout restart deploy/media -n ${NAMESPACE}
+                    kubectl rollout status deploy/media -n ${NAMESPACE} --timeout=5m
+
+                    echo "Mount media images completed."
+                    echo "=========================================================="
                 '''
             }
         }
