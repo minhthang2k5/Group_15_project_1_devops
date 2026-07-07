@@ -229,7 +229,7 @@ pipeline {
                                       --set ui.service.type=ClusterIP \
                                       --set ui.ingress.enabled=false \
                                       --set ui.extraEnvs[0].name=API_BASE_PATH \
-                                      --set ui.extraEnvs[0].value=/api \
+                                      --set ui.extraEnvs[0].value=http://storefront-bff/api \
                                       --set ui.extraEnvs[1].name=HOSTNAME \
                                       --set ui.extraEnvs[1].value=0.0.0.0 \
                                       --wait \
