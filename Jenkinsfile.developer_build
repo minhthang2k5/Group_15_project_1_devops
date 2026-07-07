@@ -300,68 +300,63 @@ pipeline {
         stage('Mount Media Images') {
             steps {
                 script {
-                    writeFile file: 'media-images-pvc.yaml', text: """apiVersion: v1
-        kind: PersistentVolumeClaim
-        metadata:
-        name: ${env.MEDIA_IMAGES_PVC}
-        spec:
-        accessModes:
-            - ReadWriteOnce
-        resources:
-            requests:
-            storage: 1Gi
-        """
+                    def pvcYaml = [
+                        'apiVersion: v1',
+                        'kind: PersistentVolumeClaim',
+                        'metadata:',
+                        "  name: ${env.MEDIA_IMAGES_PVC}",
+                        'spec:',
+                        '  accessModes:',
+                        '    - ReadWriteOnce',
+                        '  resources:',
+                        '    requests:',
+                        '      storage: 1Gi',
+                        ''
+                    ].join('\n')
 
-                    writeFile file: 'media-deployment-patch.json', text: """{
-        "spec": {
-            "template": {
-            "spec": {
-                "containers": [
-                {
-                    "name": "media",
-                    "volumeMounts": [
-                    {
-                        "name": "media-images",
-                        "mountPath": "${env.MEDIA_STORAGE_PATH}"
-                    }
-                    ]
-                }
-                ],
-                "volumes": [
-                {
-                    "name": "media-images",
-                    "persistentVolumeClaim": {
-                    "claimName": "${env.MEDIA_IMAGES_PVC}"
-                    }
-                }
-                ]
-            }
-            }
-        }
-        }
-        """
+                    def mediaDeploymentPatchYaml = [
+                        'spec:',
+                        '  template:',
+                        '    spec:',
+                        '      containers:',
+                        '        - name: media',
+                        '          volumeMounts:',
+                        '            - name: media-images',
+                        "              mountPath: ${env.MEDIA_STORAGE_PATH}",
+                        '      volumes:',
+                        '        - name: media-images',
+                        '          persistentVolumeClaim:',
+                        "            claimName: ${env.MEDIA_IMAGES_PVC}",
+                        ''
+                    ].join('\n')
 
-                    writeFile file: 'media-images-loader.yaml', text: """apiVersion: v1
-        kind: Pod
-        metadata:
-        name: media-images-loader
-        spec:
-        restartPolicy: Never
-        containers:
-            - name: media-images-loader
-            image: busybox:1.36
-            command:
-                - sh
-                - -c
-                - "mkdir -p ${env.MEDIA_STORAGE_PATH} && sleep 3600"
-            volumeMounts:
-                - name: media-images
-                mountPath: ${env.MEDIA_STORAGE_PATH}
-        volumes:
-            - name: media-images
-            persistentVolumeClaim:
-                claimName: ${env.MEDIA_IMAGES_PVC}
-        """
+                    def loaderYaml = [
+                        'apiVersion: v1',
+                        'kind: Pod',
+                        'metadata:',
+                        '  name: media-images-loader',
+                        'spec:',
+                        '  restartPolicy: Never',
+                        '  containers:',
+                        '    - name: media-images-loader',
+                        '      image: busybox:1.36',
+                        '      command:',
+                        '        - sh',
+                        '        - -c',
+                        "        - \"mkdir -p ${env.MEDIA_STORAGE_PATH} && sleep 3600\"",
+                        '      volumeMounts:',
+                        '        - name: media-images',
+                        "          mountPath: ${env.MEDIA_STORAGE_PATH}",
+                        '  volumes:',
+                        '    - name: media-images',
+                        '      persistentVolumeClaim:',
+                        "        claimName: ${env.MEDIA_IMAGES_PVC}",
+                        ''
+                    ].join('\n')
+
+                    writeFile file: 'media-images-pvc.yaml', text: pvcYaml
+                    writeFile file: 'media-deployment-patch.yaml', text: mediaDeploymentPatchYaml
+                    writeFile file: 'media-images-loader.yaml', text: loaderYaml
 
                     sh '''
                         set -e
@@ -376,6 +371,7 @@ pipeline {
 
                         if [ ! -d "${MEDIA_ASSETS_SOURCE_DIR}" ]; then
                             echo "ERROR: Không tìm thấy folder ảnh: ${MEDIA_ASSETS_SOURCE_DIR}"
+                            echo "Danh sách file ảnh tìm thấy trong workspace:"
                             find . -type f \\( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" \\) | head -80
                             exit 1
                         fi
@@ -387,17 +383,21 @@ pipeline {
                         kubectl apply --dry-run=client -n "${NAMESPACE}" -f media-images-pvc.yaml
                         kubectl apply -n "${NAMESPACE}" -f media-images-pvc.yaml
 
-                        echo "===== media-deployment-patch.json ====="
-                        cat media-deployment-patch.json
-                        echo "======================================="
+                        echo "===== media-deployment-patch.yaml ====="
+                        cat media-deployment-patch.yaml
+                        echo "========================================"
 
                         kubectl patch deployment media \
                         -n "${NAMESPACE}" \
                         --type='strategic' \
-                        --patch "$(cat media-deployment-patch.json)"
+                        --patch "$(cat media-deployment-patch.yaml)"
 
                         kubectl rollout status deploy/media -n "${NAMESPACE}" --timeout=5m
 
+                        echo "Verify media deployment has /images mount:"
+                        kubectl get deploy media -n "${NAMESPACE}" -o yaml | grep -nE 'media-images|mountPath|claimName|/images' -C 5
+
+                        echo "Tạo pod tạm để copy ảnh vào PVC..."
                         kubectl delete pod media-images-loader -n "${NAMESPACE}" --ignore-not-found=true
 
                         echo "===== media-images-loader.yaml ====="
@@ -409,15 +409,21 @@ pipeline {
 
                         kubectl wait --for=condition=Ready pod/media-images-loader -n "${NAMESPACE}" --timeout=120s
 
+                        echo "Copy ảnh từ Jenkins workspace vào PVC..."
                         kubectl cp "${MEDIA_ASSETS_SOURCE_DIR}/." "${NAMESPACE}/media-images-loader:${MEDIA_STORAGE_PATH}/"
 
-                        echo "Verify copied images:"
+                        echo "Verify copied images in loader pod:"
                         kubectl exec -n "${NAMESPACE}" media-images-loader -- sh -c "find ${MEDIA_STORAGE_PATH} -maxdepth 4 -type f | head -80"
 
+                        echo "Xóa pod copy tạm..."
                         kubectl delete pod media-images-loader -n "${NAMESPACE}" --ignore-not-found=true
 
+                        echo "Restart media để đọc lại ảnh..."
                         kubectl rollout restart deploy/media -n "${NAMESPACE}"
                         kubectl rollout status deploy/media -n "${NAMESPACE}" --timeout=5m
+
+                        echo "Verify images inside media pod:"
+                        kubectl exec -n "${NAMESPACE}" deploy/media -- sh -c "find ${MEDIA_STORAGE_PATH} -maxdepth 4 -type f | head -80"
 
                         echo "Mount media images completed."
                         echo "=========================================================="
