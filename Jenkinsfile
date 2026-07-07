@@ -63,6 +63,45 @@ def getChangedServices() {
     return changedServices
 }
 
+def getChangedDockerServices() {
+    def changedServices = [] as Set
+
+    def gitDiffOutput = ''
+    try {
+        if (env.BRANCH_NAME == 'main' || env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main') {
+            echo 'Đang trên nhánh main. So sánh Docker target với commit trước đó (HEAD~1)...'
+            gitDiffOutput = sh(
+                script: 'git diff --name-only HEAD~1',
+                returnStdout: true
+            ).trim()
+        } else {
+            sh(script: 'git fetch --no-tags --prune --depth=1 origin +refs/heads/main:refs/remotes/origin/main', returnStdout: false)
+            gitDiffOutput = sh(
+                script: 'git diff --name-only origin/main...HEAD',
+                returnStdout: true
+            ).trim()
+        }
+    } catch (e) {
+        echo "git diff failed while detecting Docker services: ${e.message}"
+    }
+
+    def paths = []
+    if (gitDiffOutput) {
+        paths = gitDiffOutput.split('\n').toList()
+    } else {
+        paths = getAffectedPaths()
+    }
+
+    def uniqueFolders = extractUniqueFolders(paths)
+    for (folder in uniqueFolders) {
+        if (fileExists("${folder}/Dockerfile")) {
+            changedServices.add(folder)
+        }
+    }
+
+    return changedServices
+}
+
 
 pipeline {
     agent any
@@ -242,11 +281,10 @@ pipeline {
                     def services = getChangedServices().toList().sort()
                     
                     if (services.isEmpty()) {
-                        echo 'Đang đóng gói TOÀN BỘ ứng dụng (Bỏ qua test vì đã chạy ở stage trước)...'
-                        sh 'mvn package -DskipTests -DskipCompile=false'
+                        echo 'Không có Maven service thay đổi. Bỏ qua Maven package.'
                     } else {
                         def serviceSelector = services.join(',')
-                        echo "Đang đóng gói CÁC SERVICE BỊ THAY ĐỔI: ${services}"
+                        echo "Đang đóng gói CÁC MAVEN SERVICE BỊ THAY ĐỔI: ${services}"
                         sh "mvn package -pl ${serviceSelector} -am -DskipTests -DskipCompile=false"
                     }
                 }
@@ -270,13 +308,13 @@ pipeline {
                     
                     if (isMainBranch) {
                         // Nhánh main: chỉ build CÁC SERVICE THAY ĐỔI, tag = 'latest'
-                        servicesToBuild = getChangedServices().toList().sort()
+                        servicesToBuild = getChangedDockerServices().toList().sort()
                         imageTag = 'latest'
                         echo "Phát hiện nhánh 'main'. Chỉ build CÁC SERVICE THAY ĐỔI: ${servicesToBuild} | Tag: ${imageTag}"
                     } else {
                         // Yêu cầu #3: User branch → chỉ build services thay đổi so với main
                         // Tag = <commitHash> (commit ID cuối cùng của branch đó)
-                        servicesToBuild = getChangedServices().toList().sort()
+                        servicesToBuild = getChangedDockerServices().toList().sort()
                         imageTag = commitHash
                         
                         // Lấy tên nhánh để log
