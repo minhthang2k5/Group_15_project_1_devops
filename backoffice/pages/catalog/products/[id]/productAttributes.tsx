@@ -195,7 +195,7 @@ const ProductAttributes: NextPage = () => {
             </select>
           </div>
           {nameAttribute === '' || nameAttribute === 'Select' ? (
-            <button className="btn btn-primary" type="submit" disabled>
+            <button className="btn btn-primary" type="button" disabled>
               Add Attribute
             </button>
           ) : (
@@ -205,7 +205,7 @@ const ProductAttributes: NextPage = () => {
           )}
         </div>
       </div>
-      <form>
+      <div>
         <div className="mb-3">
           <div className="mb-3">
             <label className="form-label" htmlFor="name">
@@ -244,7 +244,7 @@ const ProductAttributes: NextPage = () => {
                     <td>
                       <button
                         className="btn btn-outline-danger"
-                        type="submit"
+                        type="button"
                         onClick={deleteAttributeOfProduct}
                       >
                         Delete
@@ -257,14 +257,14 @@ const ProductAttributes: NextPage = () => {
           </Table>
         </div>
         <div className="text-center">
-          <button className="btn btn-primary" type="submit" onClick={saveProductAttributeOfProduct}>
+          <button className="btn btn-primary" type="button" onClick={saveProductAttributeOfProduct}>
             Save
           </button>
           <Link href="/catalog/products">
             <button className="btn btn-secondary m-3">Cancel</button>
           </Link>
         </div>
-      </form>
+      </div>
     </>
   );
 };

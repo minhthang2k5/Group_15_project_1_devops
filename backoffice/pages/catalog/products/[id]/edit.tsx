@@ -126,7 +126,7 @@ const EditProduct: NextPage = () => {
             <div className="text-center"></div>
           ) : (
             <div className="text-center">
-              <button className="btn btn-primary" type="submit">
+              <button id="save-product-button" className="btn btn-primary" type="submit">
                 Save
               </button>
               <Link href="/catalog/products">
