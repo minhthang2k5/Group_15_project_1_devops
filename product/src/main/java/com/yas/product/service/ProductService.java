@@ -396,11 +396,24 @@ public class ProductService {
         updateExistingVariants(productPutVm, allVariationImages, existingVariations);
         productRepository.saveAll(existingVariations);
 
-        Map<Long, ProductOption> optionsById = getProductOptionByIdMap(productPutVm.productOptionValues());
-        List<ProductOptionValue> productOptionValues = updateProductOptionValues(productPutVm, product, optionsById);
+        Map<Long, ProductOption> optionsById = Map.of();
+        List<ProductOptionValue> productOptionValues = List.of();
+
+        if (CollectionUtils.isNotEmpty(productPutVm.productOptionValues())) {
+            optionsById = getProductOptionByIdMap(productPutVm.productOptionValues());
+            productOptionValues = updateProductOptionValues(productPutVm, product, optionsById);
+        } else {
+            productOptionValueRepository.deleteAllByProductId(product.getId());
+        }
 
         List<ProductVariationPutVm> newVariationVms = productPutVm.variations().stream()
             .filter(variant -> variant.id() == null).toList();
+
+        product.setHasOptions((CollectionUtils.isNotEmpty(newVariationVms)
+            || CollectionUtils.isNotEmpty(existingVariations))
+            && CollectionUtils.isNotEmpty(productOptionValues));
+        productRepository.save(product);
+
         if (CollectionUtils.isEmpty(newVariationVms)) {
             return;
         }
