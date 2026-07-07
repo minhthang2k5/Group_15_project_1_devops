@@ -300,8 +300,7 @@ pipeline {
         stage('Mount Media Images') {
             steps {
                 script {
-                    writeFile file: 'media-images-pvc.yaml', text: """
-        apiVersion: v1
+                    writeFile file: 'media-images-pvc.yaml', text: """apiVersion: v1
         kind: PersistentVolumeClaim
         metadata:
         name: ${env.MEDIA_IMAGES_PVC}
@@ -313,8 +312,7 @@ pipeline {
             storage: 1Gi
         """
 
-                    writeFile file: 'media-deployment-patch.json', text: """
-        {
+                    writeFile file: 'media-deployment-patch.json', text: """{
         "spec": {
             "template": {
             "spec": {
@@ -343,8 +341,7 @@ pipeline {
         }
         """
 
-                    writeFile file: 'media-images-loader.yaml', text: """
-        apiVersion: v1
+                    writeFile file: 'media-images-loader.yaml', text: """apiVersion: v1
         kind: Pod
         metadata:
         name: media-images-loader
@@ -383,7 +380,16 @@ pipeline {
                             exit 1
                         fi
 
+                        echo "===== media-images-pvc.yaml ====="
+                        cat media-images-pvc.yaml
+                        echo "================================="
+
+                        kubectl apply --dry-run=client -n "${NAMESPACE}" -f media-images-pvc.yaml
                         kubectl apply -n "${NAMESPACE}" -f media-images-pvc.yaml
+
+                        echo "===== media-deployment-patch.json ====="
+                        cat media-deployment-patch.json
+                        echo "======================================="
 
                         kubectl patch deployment media \
                         -n "${NAMESPACE}" \
@@ -393,7 +399,14 @@ pipeline {
                         kubectl rollout status deploy/media -n "${NAMESPACE}" --timeout=5m
 
                         kubectl delete pod media-images-loader -n "${NAMESPACE}" --ignore-not-found=true
+
+                        echo "===== media-images-loader.yaml ====="
+                        cat media-images-loader.yaml
+                        echo "==================================="
+
+                        kubectl apply --dry-run=client -n "${NAMESPACE}" -f media-images-loader.yaml
                         kubectl apply -n "${NAMESPACE}" -f media-images-loader.yaml
+
                         kubectl wait --for=condition=Ready pod/media-images-loader -n "${NAMESPACE}" --timeout=120s
 
                         kubectl cp "${MEDIA_ASSETS_SOURCE_DIR}/." "${NAMESPACE}/media-images-loader:${MEDIA_STORAGE_PATH}/"
