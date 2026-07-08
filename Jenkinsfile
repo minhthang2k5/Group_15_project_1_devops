@@ -11,6 +11,7 @@ def getAffectedPaths() {
     return paths
 }
 
+
 @com.cloudbees.groovy.cps.NonCPS
 def extractUniqueFolders(List paths) {
     def folders = [] as Set
