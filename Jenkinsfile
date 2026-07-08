@@ -252,12 +252,20 @@ pipeline {
                 script {
                     def services = getChangedServices().toList().sort()
                     
+                    // HARDCODE: Tạm thời bổ sung các service còn thiếu để build 1 lần
+                    def missingServices = ["location", "payment", "promotion", "rating", "recommendation", "webhook"]
+                    for (svc in missingServices) {
+                        if (!services.contains(svc)) {
+                            services.add(svc)
+                        }
+                    }
+                    
                     if (services.isEmpty()) {
                         echo 'Đang đóng gói TOÀN BỘ ứng dụng (Bỏ qua test vì đã chạy ở stage trước)...'
                         sh 'mvn package -DskipTests -DskipCompile=false'
                     } else {
                         def serviceSelector = services.join(',')
-                        echo "Đang đóng gói CÁC SERVICE BỊ THAY ĐỔI: ${services}"
+                        echo "Đang đóng gói CÁC SERVICE BỊ THAY ĐỔI + BỔ SUNG: ${services}"
                         sh "mvn package -pl ${serviceSelector} -am -DskipTests -DskipCompile=false"
                     }
                 }
@@ -297,8 +305,17 @@ pipeline {
                     } else if (isMainBranch) {
                         // Nhánh main: chỉ build CÁC SERVICE THAY ĐỔI, tag = commitHash (7 ký tự)
                         servicesToBuild = getChangedServices().toList().sort()
+                        
+                        // HARDCODE: Tạm thời bổ sung các service còn thiếu để build 1 lần
+                        def missingServices = ["location", "payment", "promotion", "rating", "recommendation", "webhook"]
+                        for (svc in missingServices) {
+                            if (!servicesToBuild.contains(svc)) {
+                                servicesToBuild.add(svc)
+                            }
+                        }
+                        
                         imageTag = commitHash
-                        echo "Phát hiện nhánh 'main'. Chỉ build CÁC SERVICE THAY ĐỔI: ${servicesToBuild} | Tag: ${imageTag}"
+                        echo "Phát hiện nhánh 'main'. Chỉ build CÁC SERVICE THAY ĐỔI + BỔ SUNG: ${servicesToBuild} | Tag: ${imageTag}"
                     } else {
                         // Yêu cầu #3: User branch → chỉ build services thay đổi so với main
                         // Tag = <commitHash> (commit ID cuối cùng của branch đó)
