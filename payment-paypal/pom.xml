@@ -86,6 +86,7 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
                     <keepDependencies>true</keepDependencies>
+                    <skip>true</skip>
                 </configuration>
                 <executions>
                     <execution>
