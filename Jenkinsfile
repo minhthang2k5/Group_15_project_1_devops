@@ -105,6 +105,7 @@ pipeline {
                     echo '=> Bắt đầu tải và chạy Gitleaks...'
                     sh '''
                                         set -e
+                                        rm -rf yas-gitops
                                         GITLEAKS_URL="https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_8.18.2_linux_x64.tar.gz"
 
                                         if command -v gitleaks >/dev/null 2>&1; then
