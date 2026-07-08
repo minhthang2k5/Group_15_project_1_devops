@@ -27,10 +27,21 @@ def getChangedServices() {
 
     def gitDiffOutput = ''
     try {
-        // Trên nhánh main: so sánh với commit trước đó (HEAD~1)
+        // Phát hiện tag (release)
+        def gitTag = ''
+        if (env.TAG_NAME) {
+            gitTag = env.TAG_NAME
+        } else {
+            try {
+                gitTag = sh(script: 'git describe --tags --exact-match 2>/dev/null || echo ""', returnStdout: true).trim()
+            } catch (e) {}
+        }
+        def isRelease = gitTag && gitTag.startsWith('v')
+
+        // Trên nhánh main hoặc khi build tag: so sánh với commit trước đó (HEAD~1)
         // Trên nhánh dev: so sánh với origin/main
-        if (env.BRANCH_NAME == 'main' || env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main') {
-            echo 'Đang trên nhánh main. So sánh với commit trước đó (HEAD~1)...'
+        if (isRelease || env.BRANCH_NAME == 'main' || env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main') {
+            echo "Đang ở nhánh main hoặc build tag (${gitTag ?: 'main'}). So sánh với commit trước đó (HEAD~1)..."
             gitDiffOutput = sh(
                 script: 'git diff --name-only HEAD~1',
                 returnStdout: true
@@ -56,45 +67,6 @@ def getChangedServices() {
     def uniqueFolders = extractUniqueFolders(paths)
     for (folder in uniqueFolders) {
         if (fileExists("${folder}/pom.xml")) {
-            changedServices.add(folder)
-        }
-    }
-
-    return changedServices
-}
-
-def getChangedDockerServices() {
-    def changedServices = [] as Set
-
-    def gitDiffOutput = ''
-    try {
-        if (env.BRANCH_NAME == 'main' || env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main') {
-            echo 'Đang trên nhánh main. So sánh Docker target với commit trước đó (HEAD~1)...'
-            gitDiffOutput = sh(
-                script: 'git diff --name-only HEAD~1',
-                returnStdout: true
-            ).trim()
-        } else {
-            sh(script: 'git fetch --no-tags --prune --depth=1 origin +refs/heads/main:refs/remotes/origin/main', returnStdout: false)
-            gitDiffOutput = sh(
-                script: 'git diff --name-only origin/main...HEAD',
-                returnStdout: true
-            ).trim()
-        }
-    } catch (e) {
-        echo "git diff failed while detecting Docker services: ${e.message}"
-    }
-
-    def paths = []
-    if (gitDiffOutput) {
-        paths = gitDiffOutput.split('\n').toList()
-    } else {
-        paths = getAffectedPaths()
-    }
-
-    def uniqueFolders = extractUniqueFolders(paths)
-    for (folder in uniqueFolders) {
-        if (fileExists("${folder}/Dockerfile")) {
             changedServices.add(folder)
         }
     }
@@ -280,11 +252,20 @@ pipeline {
                 script {
                     def services = getChangedServices().toList().sort()
                     
+                    // HARDCODE: Tạm thời bổ sung các service còn thiếu để build 1 lần
+                    def missingServices = ["location", "payment", "promotion", "rating", "recommendation", "webhook"]
+                    for (svc in missingServices) {
+                        if (!services.contains(svc)) {
+                            services.add(svc)
+                        }
+                    }
+                    
                     if (services.isEmpty()) {
-                        echo 'Không có Maven service thay đổi. Bỏ qua Maven package.'
+                        echo 'Đang đóng gói TOÀN BỘ ứng dụng (Bỏ qua test vì đã chạy ở stage trước)...'
+                        sh 'mvn package -DskipTests -DskipCompile=false'
                     } else {
                         def serviceSelector = services.join(',')
-                        echo "Đang đóng gói CÁC MAVEN SERVICE BỊ THAY ĐỔI: ${services}"
+                        echo "Đang đóng gói CÁC SERVICE BỊ THAY ĐỔI + BỔ SUNG: ${services}"
                         sh "mvn package -pl ${serviceSelector} -am -DskipTests -DskipCompile=false"
                     }
                 }
@@ -303,18 +284,42 @@ pipeline {
                     def servicesToBuild = []
                     def imageTag = ''
                     
+                    // Phát hiện tag (release)
+                    def gitTag = ''
+                    if (env.TAG_NAME) {
+                        gitTag = env.TAG_NAME
+                    } else {
+                        try {
+                            gitTag = sh(script: 'git describe --tags --exact-match 2>/dev/null || echo ""', returnStdout: true).trim()
+                        } catch (e) {}
+                    }
+                    def isRelease = gitTag && gitTag.startsWith('v')
+                    
                     // Nhất quán với getChangedServices(): kiểm tra cả BRANCH_NAME và GIT_BRANCH
                     def isMainBranch = (env.BRANCH_NAME == 'main' || env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main')
                     
-                    if (isMainBranch) {
-                        // Nhánh main: chỉ build CÁC SERVICE THAY ĐỔI, tag = 'latest'
-                        servicesToBuild = getChangedDockerServices().toList().sort()
-                        imageTag = 'latest'
-                        echo "Phát hiện nhánh 'main'. Chỉ build CÁC SERVICE THAY ĐỔI: ${servicesToBuild} | Tag: ${imageTag}"
+                    if (isRelease) {
+                        servicesToBuild = getChangedServices().toList().sort()
+                        imageTag = gitTag
+                        echo "Phát hiện tag release: ${imageTag}. Build cho Staging. Dịch vụ: ${servicesToBuild}"
+                    } else if (isMainBranch) {
+                        // Nhánh main: chỉ build CÁC SERVICE THAY ĐỔI, tag = commitHash (7 ký tự)
+                        servicesToBuild = getChangedServices().toList().sort()
+                        
+                        // HARDCODE: Tạm thời bổ sung các service còn thiếu để build 1 lần
+                        def missingServices = ["location", "payment", "promotion", "rating", "recommendation", "webhook"]
+                        for (svc in missingServices) {
+                            if (!servicesToBuild.contains(svc)) {
+                                servicesToBuild.add(svc)
+                            }
+                        }
+                        
+                        imageTag = commitHash
+                        echo "Phát hiện nhánh 'main'. Chỉ build CÁC SERVICE THAY ĐỔI + BỔ SUNG: ${servicesToBuild} | Tag: ${imageTag}"
                     } else {
                         // Yêu cầu #3: User branch → chỉ build services thay đổi so với main
                         // Tag = <commitHash> (commit ID cuối cùng của branch đó)
-                        servicesToBuild = getChangedDockerServices().toList().sort()
+                        servicesToBuild = getChangedServices().toList().sort()
                         imageTag = commitHash
                         
                         // Lấy tên nhánh để log
@@ -343,10 +348,102 @@ pipeline {
                                     sh "docker build -t ${imageName} ./${svc}"
                                     sh "docker push ${imageName}"
                                     echo "✅ Đã push thành công: ${imageName}"
+                                    
+                                    // Nếu là main branch (nhưng không phải tag release), đẩy thêm tag 'latest' cho CD Job của dev dùng
+                                    if (isMainBranch && !isRelease) {
+                                        def latestImageName = "${env.DOCKER_USER}/${svc}:latest"
+                                        sh "docker tag ${imageName} ${latestImageName}"
+                                        sh "docker push ${latestImageName}"
+                                        echo "✅ Đã push tag latest thành công: ${latestImageName}"
+                                    }
                                 } else {
                                     echo "CẢNH BÁO: Không tìm thấy thư mục ./${svc}. Bỏ qua..."
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Update GitOps Repo') {
+            steps {
+                script {
+                    def servicesToBuild = getChangedServices().toList().sort()
+                    def commitHash = env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'latest'
+                    
+                    def gitTag = ''
+                    if (env.TAG_NAME) {
+                        gitTag = env.TAG_NAME
+                    } else {
+                        try {
+                            gitTag = sh(script: 'git describe --tags --exact-match 2>/dev/null || echo ""', returnStdout: true).trim()
+                        } catch (e) {}
+                    }
+                    def isRelease = gitTag && gitTag.startsWith('v')
+                    def isMainBranch = (env.BRANCH_NAME == 'main' || env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main')
+                    def imageTag = isRelease ? gitTag : commitHash
+                    
+                    // Chỉ chạy GitOps cho nhánh main hoặc Release Tag
+                    if (!isMainBranch && !isRelease) {
+                        echo "⏭️ Đây là user branch. Chỉ push Docker Image để CD Job sử dụng. Bỏ qua cập nhật GitOps."
+                    } else if (servicesToBuild.isEmpty()) {
+                        echo "⏭️ Không có service nào thay đổi -> Bỏ qua Update GitOps Repo."
+                    } else {
+                        def envName = isRelease ? 'staging' : 'dev'
+                        
+                        echo "=> Bắt đầu Clone và Update GitOps Repo cho: ${servicesToBuild} | Môi trường: ${envName} | Tag: ${imageTag}"
+                        
+                        // Sử dụng Credentials ID 'github-credentials-id' lưu Token/Username Password để Git Push
+                        withCredentials([usernamePassword(credentialsId: 'github-credentials-id', passwordVariable: 'GIT_PASS', usernameVariable: 'GIT_USER')]) {
+                            sh """
+                                git config --global user.email "lenhatthanh1004@gmail.com"
+                                git config --global user.name "23120357"
+                                
+                                rm -rf yas-gitops
+                                git clone https://${GIT_USER}:${GIT_PASS}@github.com/23120357/yas-gitops.git
+                            """
+                            
+                            for (String svc : servicesToBuild) {
+                                sh """
+                                    cd yas-gitops
+                                    FILE_PATH="environments/${envName}/services/${svc}.yaml"
+                                    
+                                    # Xác định KEY (ui hoặc backend)
+                                    if grep -q "^ui:" "charts/${svc}/values.yaml"; then
+                                        KEY="ui"
+                                    else
+                                        KEY="backend"
+                                    fi
+                                    
+                                    # Đảm bảo thư mục tồn tại
+                                    mkdir -p environments/${envName}/services
+                                    
+                                    # Cập nhật tag thông minh bảo toàn cấu hình cũ
+                                    if [ -f "\${FILE_PATH}" ] && grep -q "tag:" "\${FILE_PATH}"; then
+                                        sed -i 's/tag: .*/tag: "'${imageTag}'"/g' "\${FILE_PATH}"
+                                    else
+                                        cat <<EOF > "\${FILE_PATH}"
+# Service specific overrides
+\${KEY}:
+  image:
+    tag: "${imageTag}"
+EOF
+                                    fi
+                                    
+                                    git add "\${FILE_PATH}"
+                                """
+                            }
+                            
+                            sh """
+                                cd yas-gitops
+                                if ! git diff --cached --quiet; then
+                                    git commit -m "Auto-update image tag to ${imageTag} for ${servicesToBuild} [skip ci]"
+                                    git push origin main
+                                else
+                                    echo "Không có thay đổi để commit."
+                                fi
+                            """
                         }
                     }
                 }
