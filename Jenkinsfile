@@ -340,7 +340,7 @@ pipeline {
                     // TỰ ĐỘNG FALLBACK: Nếu danh sách trống trên main hoặc release tag (do shallow clone / build thủ công)
                     // Jenkins sẽ tự động điền toàn bộ 18 services để đồng bộ đầy đủ cấu hình.
                     if (servicesToBuild.isEmpty() && (isMainBranch || isRelease)) {
-                        servicesToBuild = ["location", "payment", "promotion", "rating", "recommendation", "webhook", "product", "cart", "order", "customer", "inventory", "media", "search", "storefront-bff", "backoffice-bff", "storefront-ui", "backoffice-ui", "sampledata"]
+                        servicesToBuild = ["tax","backoffice-bff", "storefront-ui", "backoffice-ui","storefront-bff"]
                         echo "⚠️ Danh sách thay đổi trống. Tự động chuyển sang build/push TOÀN BỘ service: ${servicesToBuild}"
                     }
 
@@ -364,13 +364,13 @@ pipeline {
                                     dockerRepoName = 'storefront'
                                 }
 
-                                echo "Đang Build và Push image cho service: ${svc} (Docker Hub: ${dockerRepoName}) | Tag: ${imageTag}"
+                                echo "Đang Build và Push image cho service: ${dockerRepoName} (Docker Hub: ${dockerRepoName}) | Tag: ${imageTag}"
                                 
                                 def imageName = "${env.DOCKER_USER}/${dockerRepoName}:${imageTag}"
                                 
                                 // Bỏ qua nếu thư mục service không tồn tại (tránh lỗi pipeline)
-                                if (fileExists("./${svc}")) {
-                                    sh "docker build -t ${imageName} ./${svc}"
+                                if (fileExists("./${dockerRepoName}")) {
+                                    sh "docker build -t ${imageName} ./${dockerRepoName}"
                                     sh "docker push ${imageName}"
                                     echo "✅ Đã push thành công: ${imageName}"
                                     
@@ -382,7 +382,7 @@ pipeline {
                                         echo "✅ Đã push tag latest thành công: ${latestImageName}"
                                     }
                                 } else {
-                                    echo "CẢNH BÁO: Không tìm thấy thư mục ./${svc}. Bỏ qua..."
+                                    echo "CẢNH BÁO: Không tìm thấy thư mục ./${dockerRepoName}. Bỏ qua..."
                                 }
                             }
                         }
@@ -414,7 +414,7 @@ pipeline {
                     
                     // TỰ ĐỘNG FALLBACK: Điền toàn bộ 18 services nếu danh sách trống trên main hoặc release tag
                     if (servicesToBuild.isEmpty() && (isMainBranch || isRelease)) {
-                        servicesToBuild = ["location", "payment", "promotion", "rating", "recommendation", "webhook", "product", "cart", "order", "customer", "inventory", "media", "search", "storefront-bff", "backoffice-bff", "storefront-ui", "backoffice-ui", "sampledata","webhook","tax"]
+                        servicesToBuild = ["storefront-bff", "backoffice-bff", "storefront-ui", "backoffice-ui","tax"]
                         echo "⚠️ Danh sách thay đổi trống. Tự động chuyển sang cập nhật GitOps TOÀN BỘ service."
                     }
                     
