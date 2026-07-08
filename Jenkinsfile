@@ -356,9 +356,17 @@ pipeline {
                             '''
                             
                             for (String svc : servicesToBuild) {
-                                echo "Đang Build và Push image cho service: ${svc} | Tag: ${imageTag}"
+                                // Ánh xạ tên service sang tên repo Docker Hub chính xác
+                                def dockerRepoName = svc
+                                if (svc == 'backoffice-ui') {
+                                    dockerRepoName = 'backoffice'
+                                } else if (svc == 'storefront-ui') {
+                                    dockerRepoName = 'storefront'
+                                }
+
+                                echo "Đang Build và Push image cho service: ${svc} (Docker Hub: ${dockerRepoName}) | Tag: ${imageTag}"
                                 
-                                def imageName = "${env.DOCKER_USER}/${svc}:${imageTag}"
+                                def imageName = "${env.DOCKER_USER}/${dockerRepoName}:${imageTag}"
                                 
                                 // Bỏ qua nếu thư mục service không tồn tại (tránh lỗi pipeline)
                                 if (fileExists("./${svc}")) {
@@ -368,7 +376,7 @@ pipeline {
                                     
                                     // Nếu là main branch (nhưng không phải tag release), đẩy thêm tag 'latest' cho CD Job của dev dùng
                                     if (isMainBranch && !isRelease) {
-                                        def latestImageName = "${env.DOCKER_USER}/${svc}:latest"
+                                        def latestImageName = "${env.DOCKER_USER}/${dockerRepoName}:latest"
                                         sh "docker tag ${imageName} ${latestImageName}"
                                         sh "docker push ${latestImageName}"
                                         echo "✅ Đã push tag latest thành công: ${latestImageName}"
