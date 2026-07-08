@@ -404,7 +404,7 @@ pipeline {
                     
                     // TỰ ĐỘNG FALLBACK: Điền toàn bộ 18 services nếu danh sách trống trên main hoặc release tag
                     if (servicesToBuild.isEmpty() && (isMainBranch || isRelease)) {
-                        servicesToBuild = ["location", "payment", "promotion", "rating", "recommendation", "webhook", "product", "cart", "order", "customer", "inventory", "media", "search", "storefront-bff", "backoffice-bff", "storefront-ui", "backoffice-ui", "sampledata"]
+                        servicesToBuild = ["location", "payment", "promotion", "rating", "recommendation", "webhook", "product", "cart", "order", "customer", "inventory", "media", "search", "storefront-bff", "backoffice-bff", "storefront-ui", "backoffice-ui", "sampledata","webhook","tax"]
                         echo "⚠️ Danh sách thay đổi trống. Tự động chuyển sang cập nhật GitOps TOÀN BỘ service."
                     }
                     
