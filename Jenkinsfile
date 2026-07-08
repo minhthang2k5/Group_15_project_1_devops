@@ -251,6 +251,7 @@ pipeline {
             steps {
                 script {
                     def services = getChangedServices().toList().sort()
+                    services.remove("payment-paypal")
                     
                     // HARDCODE: Tạm thời bổ sung các service còn thiếu để build 1 lần
                     def missingServices = ["location", "payment", "promotion", "rating", "recommendation", "webhook"]
@@ -300,11 +301,13 @@ pipeline {
                     
                     if (isRelease) {
                         servicesToBuild = getChangedServices().toList().sort()
+                        servicesToBuild.remove("payment-paypal")
                         imageTag = gitTag
                         echo "Phát hiện tag release: ${imageTag}. Build cho Staging. Dịch vụ: ${servicesToBuild}"
                     } else if (isMainBranch) {
                         // Nhánh main: chỉ build CÁC SERVICE THAY ĐỔI, tag = commitHash (7 ký tự)
                         servicesToBuild = getChangedServices().toList().sort()
+                        servicesToBuild.remove("payment-paypal")
                         
                         // HARDCODE: Tạm thời bổ sung các service còn thiếu để build 1 lần
                         def missingServices = ["location", "payment", "promotion", "rating", "recommendation", "webhook"]
@@ -320,6 +323,7 @@ pipeline {
                         // Yêu cầu #3: User branch → chỉ build services thay đổi so với main
                         // Tag = <commitHash> (commit ID cuối cùng của branch đó)
                         servicesToBuild = getChangedServices().toList().sort()
+                        servicesToBuild.remove("payment-paypal")
                         imageTag = commitHash
                         
                         // Lấy tên nhánh để log
