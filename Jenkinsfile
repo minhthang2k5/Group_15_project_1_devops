@@ -318,7 +318,7 @@ pipeline {
                     
                     // TỰ ĐỘNG FALLBACK: Nếu danh sách trống trên main hoặc release tag (do shallow clone / build thủ công)
                     // Jenkins sẽ tự động điền toàn bộ 18 services để đồng bộ đầy đủ cấu hình.
-                    if (servicesToBuild.isEmpty() && (isMainBranch || isRelease)) {
+                    if (servicesToBuild.isEmpty() && isRelease) {
                         servicesToBuild = ["backoffice-bff", "cart", "customer", "inventory", "location", "media", "order", "payment", "product", "promotion", "rating", "search", "storefront-bff", "tax", "webhook", "sampledata", "recommendation", "backoffice-ui", "storefront-ui"]
                         echo "⚠️ Danh sách thay đổi trống. Tự động chuyển sang build/push TOÀN BỘ service: ${servicesToBuild}"
                     }
@@ -392,7 +392,7 @@ pipeline {
                     servicesToBuild.remove("payment-paypal")
                     
                     // TỰ ĐỘNG FALLBACK: Điền toàn bộ 18 services nếu danh sách trống trên main hoặc release tag
-                    if (servicesToBuild.isEmpty() && (isMainBranch || isRelease)) {
+                    if (servicesToBuild.isEmpty() && isRelease) {
                         servicesToBuild = ["backoffice-bff", "cart", "customer", "inventory", "location", "media", "order", "payment", "product", "promotion", "rating", "search", "storefront-bff", "tax", "webhook", "sampledata", "recommendation", "backoffice-ui", "storefront-ui"]
                         echo "⚠️ Danh sách thay đổi trống. Tự động chuyển sang cập nhật GitOps TOÀN BỘ service."
                     }
