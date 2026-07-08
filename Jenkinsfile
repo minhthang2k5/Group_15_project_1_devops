@@ -253,6 +253,18 @@ pipeline {
                     def services = getChangedServices().toList().sort()
                     services.remove("payment-paypal")
                     
+                    // Phát hiện nhánh/tag để tự động build toàn bộ nếu cần thiết
+                    def gitTag = ''
+                    if (env.TAG_NAME) {
+                        gitTag = env.TAG_NAME
+                    } else {
+                        try {
+                            gitTag = sh(script: 'git describe --tags --exact-match 2>/dev/null || echo ""', returnStdout: true).trim()
+                        } catch (e) {}
+                    }
+                    def isRelease = gitTag && gitTag.startsWith('v')
+                    def isMainBranch = (env.BRANCH_NAME == 'main' || env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main')
+                    
                     // HARDCODE: Tạm thời bổ sung các service còn thiếu để build 1 lần
                     def missingServices = ["location", "payment", "promotion", "rating", "recommendation", "webhook"]
                     for (svc in missingServices) {
@@ -261,8 +273,9 @@ pipeline {
                         }
                     }
                     
-                    if (services.isEmpty()) {
-                        echo 'Đang đóng gói TOÀN BỘ ứng dụng (Bỏ qua test vì đã chạy ở stage trước)...'
+                    // Nếu không có thay đổi thật sự trên main/release, build toàn bộ repo để tránh lỗi thiếu file jar khi docker build
+                    if (services.isEmpty() || (services.size() == missingServices.size() && (isMainBranch || isRelease))) {
+                        echo '⚠️ Đang đóng gói TOÀN BỘ ứng dụng (Bỏ qua test vì đã chạy ở stage trước)...'
                         sh 'mvn package -DskipTests -DskipCompile=false'
                     } else {
                         def serviceSelector = services.join(',')
@@ -301,34 +314,32 @@ pipeline {
                     
                     if (isRelease) {
                         servicesToBuild = getChangedServices().toList().sort()
-                        servicesToBuild.remove("payment-paypal")
                         imageTag = gitTag
                         echo "Phát hiện tag release: ${imageTag}. Build cho Staging. Dịch vụ: ${servicesToBuild}"
                     } else if (isMainBranch) {
                         // Nhánh main: chỉ build CÁC SERVICE THAY ĐỔI, tag = commitHash (7 ký tự)
                         servicesToBuild = getChangedServices().toList().sort()
-                        servicesToBuild.remove("payment-paypal")
-                        
-                        // HARDCODE: Tạm thời bổ sung các service còn thiếu để build 1 lần
-                        def missingServices = ["location", "payment", "promotion", "rating", "recommendation", "webhook"]
-                        for (svc in missingServices) {
-                            if (!servicesToBuild.contains(svc)) {
-                                servicesToBuild.add(svc)
-                            }
-                        }
-                        
                         imageTag = commitHash
-                        echo "Phát hiện nhánh 'main'. Chỉ build CÁC SERVICE THAY ĐỔI + BỔ SUNG: ${servicesToBuild} | Tag: ${imageTag}"
+                        echo "Phát hiện nhánh 'main'. Chỉ build CÁC SERVICE THAY ĐỔI: ${servicesToBuild} | Tag: ${imageTag}"
                     } else {
                         // Yêu cầu #3: User branch → chỉ build services thay đổi so với main
                         // Tag = <commitHash> (commit ID cuối cùng của branch đó)
                         servicesToBuild = getChangedServices().toList().sort()
-                        servicesToBuild.remove("payment-paypal")
                         imageTag = commitHash
                         
                         // Lấy tên nhánh để log
                         def rawBranch = env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'dev'
                         echo "Phát hiện user branch '${rawBranch}'. Chỉ build CÁC SERVICE THAY ĐỔI: ${servicesToBuild} | Tag: ${imageTag}"
+                    }
+
+                    // Loại bỏ các module phụ trợ không chạy container
+                    servicesToBuild.remove("payment-paypal")
+                    
+                    // TỰ ĐỘNG FALLBACK: Nếu danh sách trống trên main hoặc release tag (do shallow clone / build thủ công)
+                    // Jenkins sẽ tự động điền toàn bộ 18 services để đồng bộ đầy đủ cấu hình.
+                    if (servicesToBuild.isEmpty() && (isMainBranch || isRelease)) {
+                        servicesToBuild = ["location", "payment", "promotion", "rating", "recommendation", "webhook", "product", "cart", "order", "customer", "inventory", "media", "search", "storefront-bff", "backoffice-bff", "storefront-ui", "backoffice-ui", "sampledata"]
+                        echo "⚠️ Danh sách thay đổi trống. Tự động chuyển sang build/push TOÀN BỘ service: ${servicesToBuild}"
                     }
 
                     if (servicesToBuild.isEmpty()) {
@@ -387,6 +398,15 @@ pipeline {
                     def isRelease = gitTag && gitTag.startsWith('v')
                     def isMainBranch = (env.BRANCH_NAME == 'main' || env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main')
                     def imageTag = isRelease ? gitTag : commitHash
+                    
+                    // Loại bỏ các module phụ trợ không chạy container
+                    servicesToBuild.remove("payment-paypal")
+                    
+                    // TỰ ĐỘNG FALLBACK: Điền toàn bộ 18 services nếu danh sách trống trên main hoặc release tag
+                    if (servicesToBuild.isEmpty() && (isMainBranch || isRelease)) {
+                        servicesToBuild = ["location", "payment", "promotion", "rating", "recommendation", "webhook", "product", "cart", "order", "customer", "inventory", "media", "search", "storefront-bff", "backoffice-bff", "storefront-ui", "backoffice-ui", "sampledata"]
+                        echo "⚠️ Danh sách thay đổi trống. Tự động chuyển sang cập nhật GitOps TOÀN BỘ service."
+                    }
                     
                     // Chỉ chạy GitOps cho nhánh main hoặc Release Tag
                     if (!isMainBranch && !isRelease) {
