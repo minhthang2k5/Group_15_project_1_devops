@@ -255,33 +255,12 @@ pipeline {
                     def services = getChangedServices().toList().sort()
                     services.remove("payment-paypal")
                     
-                    // Phát hiện nhánh/tag để tự động build toàn bộ nếu cần thiết
-                    def gitTag = ''
-                    if (env.TAG_NAME) {
-                        gitTag = env.TAG_NAME
-                    } else {
-                        try {
-                            gitTag = sh(script: 'git describe --tags --exact-match 2>/dev/null || echo ""', returnStdout: true).trim()
-                        } catch (e) {}
-                    }
-                    def isRelease = gitTag && gitTag.startsWith('v')
-                    def isMainBranch = (env.BRANCH_NAME == 'main' || env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main')
-                    
-                    // HARDCODE: Tạm thời bổ sung các service còn thiếu để build 1 lần
-                    def missingServices = ["location", "payment", "promotion", "rating", "recommendation", "webhook"]
-                    for (svc in missingServices) {
-                        if (!services.contains(svc)) {
-                            services.add(svc)
-                        }
-                    }
-                    
-                    // Nếu không có thay đổi thật sự trên main/release, build toàn bộ repo để tránh lỗi thiếu file jar khi docker build
-                    if (services.isEmpty() || (services.size() == missingServices.size() && (isMainBranch || isRelease))) {
+                    if (services.isEmpty()) {
                         echo '⚠️ Đang đóng gói TOÀN BỘ ứng dụng (Bỏ qua test vì đã chạy ở stage trước)...'
                         sh 'mvn package -DskipTests -DskipCompile=false'
                     } else {
                         def serviceSelector = services.join(',')
-                        echo "Đang đóng gói CÁC SERVICE BỊ THAY ĐỔI + BỔ SUNG: ${services}"
+                        echo "Đang đóng gói CÁC SERVICE BỊ THAY ĐỔI: ${services}"
                         sh "mvn package -pl ${serviceSelector} -am -DskipTests -DskipCompile=false"
                     }
                 }
@@ -441,10 +420,19 @@ pipeline {
                             for (String svc : servicesToBuild) {
                                 sh """
                                     cd yas-gitops
-                                    FILE_PATH="environments/${envName}/services/${svc}.yaml"
+                                    
+                                    # Ánh xạ từ tên service trong repo source code sang tên file/chart trong repo gitops
+                                    GITOPS_SVC="${svc}"
+                                    if [ "${svc}" = "backoffice" ]; then
+                                        GITOPS_SVC="backoffice-ui"
+                                    elif [ "${svc}" = "storefront" ]; then
+                                        GITOPS_SVC="storefront-ui"
+                                    fi
+                                    
+                                    FILE_PATH="environments/${envName}/services/\${GITOPS_SVC}.yaml"
                                     
                                     # Xác định KEY (ui hoặc backend)
-                                    if grep -q "^ui:" "charts/${svc}/values.yaml"; then
+                                    if grep -q "^ui:" "charts/\${GITOPS_SVC}/values.yaml"; then
                                         KEY="ui"
                                     else
                                         KEY="backend"
@@ -456,7 +444,12 @@ pipeline {
                                     # Cập nhật tag thông minh bảo toàn cấu hình cũ
                                     if [ -f "\${FILE_PATH}" ] && grep -q "tag:" "\${FILE_PATH}"; then
                                         sed -i 's/tag: .*/tag: "'${imageTag}'"/g' "\${FILE_PATH}"
+                                    elif [ -f "\${FILE_PATH}" ]; then
+                                        # Nếu file đã tồn tại nhưng chưa có tag:, ta append thêm vào cuối
+                                        echo "  image:" >> "\${FILE_PATH}"
+                                        echo "    tag: \"${imageTag}\"" >> "\${FILE_PATH}"
                                     else
+                                        # Nếu file chưa tồn tại thì tạo mới hoàn toàn
                                         cat <<EOF > "\${FILE_PATH}"
 # Service specific overrides
 \${KEY}:
