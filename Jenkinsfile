@@ -273,7 +273,7 @@ pipeline {
                     echo '=> Bắt đầu Build và Push Docker Image lên Docker Hub...'
                     
                     // Lấy 7 ký tự đầu của commit ID
-                    def commitHash = env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'latest'
+                    def commitHash = env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
                     
                     // Xác định danh sách service cần build và tag tương ứng
                     def servicesToBuild = []
