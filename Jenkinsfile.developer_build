@@ -1,0 +1,474 @@
+def SERVICES = [
+    [name: 'product',        param: 'PRODUCT_BRANCH',        chart: 'k8s/charts/product',        image: 'product',        chartType: 'backend'],
+    [name: 'cart',           param: 'CART_BRANCH',           chart: 'k8s/charts/cart',           image: 'cart',           chartType: 'backend'],
+    [name: 'order',          param: 'ORDER_BRANCH',          chart: 'k8s/charts/order',          image: 'order',          chartType: 'backend'],
+    [name: 'customer',       param: 'CUSTOMER_BRANCH',       chart: 'k8s/charts/customer',       image: 'customer',       chartType: 'backend'],
+    [name: 'inventory',      param: 'INVENTORY_BRANCH',      chart: 'k8s/charts/inventory',      image: 'inventory',      chartType: 'backend'],
+    [name: 'tax',            param: 'TAX_BRANCH',            chart: 'k8s/charts/tax',            image: 'tax',            chartType: 'backend'],
+    [name: 'media',          param: 'MEDIA_BRANCH',          chart: 'k8s/charts/media',          image: 'media',          chartType: 'backend'],
+    [name: 'search',         param: 'SEARCH_BRANCH',         chart: 'k8s/charts/search',         image: 'search',         chartType: 'backend'],
+    [name: 'storefront-bff', param: 'STOREFRONT_BFF_BRANCH', chart: 'k8s/charts/storefront-bff', image: 'storefront-bff', chartType: 'backend'],
+    [name: 'backoffice-bff', param: 'BACKOFFICE_BFF_BRANCH', chart: 'k8s/charts/backoffice-bff', image: 'backoffice-bff', chartType: 'backend'],
+
+    [name: 'storefront-ui',  param: 'STOREFRONT_UI_BRANCH',  chart: 'k8s/charts/storefront-ui',  image: 'storefront',     chartType: 'ui'],
+    [name: 'backoffice-ui',  param: 'BACKOFFICE_UI_BRANCH',  chart: 'k8s/charts/backoffice-ui',  image: 'backoffice',     chartType: 'ui'],
+
+    [name: 'swagger-ui',     param: null,                    chart: 'k8s/charts/swagger-ui',     image: '',              chartType: 'swagger'],
+    [name: 'sampledata',     param: 'SAMPLEDATA_BRANCH',     chart: 'k8s/charts/sampledata',     image: 'sampledata',     chartType: 'backend']
+]
+
+def NODEPORT_SERVICES = []
+
+pipeline {
+    agent any
+
+    environment {
+        APP_REPO_URL  = 'https://github.com/minhthang2k5/Group_15_project_1_devops.git'
+        DOCKERHUB_ORG = 'minhthangzxc'
+        DEFAULT_TAG   = 'latest'
+        TAG_LENGTH    = '7'
+        PUBLIC_NODE_IP = '34.142.221.97'
+        JENKINS_BASE_URL = 'http://34.142.221.97:8080'
+
+        MEDIA_ASSETS_SOURCE_DIR = 'sampledata/images'
+        MEDIA_STORAGE_PATH = '/images'
+        MEDIA_IMAGES_PVC = 'media-images-pvc'
+    }
+
+    parameters {
+        string(name: 'ENV_NAME', defaultValue: 'developer', description: 'Tên môi trường test, ví dụ: thang')
+
+        string(name: 'PRODUCT_BRANCH', defaultValue: 'main')
+        string(name: 'CART_BRANCH', defaultValue: 'main')
+        string(name: 'ORDER_BRANCH', defaultValue: 'main')
+        string(name: 'CUSTOMER_BRANCH', defaultValue: 'main')
+        string(name: 'INVENTORY_BRANCH', defaultValue: 'main')
+        string(name: 'TAX_BRANCH', defaultValue: 'main')
+        string(name: 'MEDIA_BRANCH', defaultValue: 'main')
+        string(name: 'SEARCH_BRANCH', defaultValue: 'main')
+        string(name: 'STOREFRONT_BFF_BRANCH', defaultValue: 'main')
+        string(name: 'BACKOFFICE_BFF_BRANCH', defaultValue: 'main')
+        string(name: 'STOREFRONT_UI_BRANCH', defaultValue: 'main')
+        string(name: 'BACKOFFICE_UI_BRANCH', defaultValue: 'main')
+        string(name: 'SAMPLEDATA_BRANCH', defaultValue: 'main')
+    }
+
+    stages {
+        stage('Prepare Namespace') {
+            steps {
+                script {
+                    env.NAMESPACE = "yas-dev-${params.ENV_NAME}".toLowerCase()
+
+                    env.DEPLOY_DOMAIN = "${env.NAMESPACE}.local"
+                    env.STOREFRONT_HOST = "storefront.${env.DEPLOY_DOMAIN}"
+                    env.BACKOFFICE_HOST = "backoffice.${env.DEPLOY_DOMAIN}"
+                    env.API_HOST = "api.${env.DEPLOY_DOMAIN}"
+
+                    sh """
+                        kubectl create namespace ${env.NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+
+                        # Tránh bị Istio auto inject vào namespace test nếu cluster đang bật sidecar injection
+                        kubectl label namespace ${env.NAMESPACE} istio-injection=disabled --overwrite || true
+                    """
+
+                    echo "Namespace: ${env.NAMESPACE}"
+                    echo "Storefront host: ${env.STOREFRONT_HOST}"
+                    echo "Backoffice host: ${env.BACKOFFICE_HOST}"
+                    echo "API host: ${env.API_HOST}"
+                }
+            }
+        }
+
+        stage('Prepare Helm Repos') {
+            steps {
+                sh """
+                    helm repo add stakater https://stakater.github.io/stakater-charts || true
+                    helm repo update
+                """
+            }
+        }
+
+        stage('Create DockerHub Pull Secret') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-credentials-id',
+                    usernameVariable: 'DOCKERHUB_USERNAME',
+                    passwordVariable: 'DOCKERHUB_PASSWORD'
+                )]) {
+                    sh """
+                        kubectl delete secret dockerhub-secret -n ${env.NAMESPACE} --ignore-not-found
+
+                        kubectl create secret docker-registry dockerhub-secret \
+                          --docker-server=https://index.docker.io/v1/ \
+                          --docker-username="\$DOCKERHUB_USERNAME" \
+                          --docker-password="\$DOCKERHUB_PASSWORD" \
+                          --docker-email=no-email@example.com \
+                          -n ${env.NAMESPACE}
+                    """
+                }
+            }
+        }
+
+        stage('Deploy Configuration') {
+            steps {
+                sh """
+                    helm dependency build k8s/charts/yas-configuration
+
+                    helm upgrade --install yas-configuration k8s/charts/yas-configuration \
+                        --namespace ${env.NAMESPACE} \
+                        --set mediaApplicationConfig.yas.publicUrl=http://${env.API_HOST}/media \
+                        --set paymentPaypalApplicationConfig.yas.public.url=http://${env.STOREFRONT_HOST}/complete-payment \
+                        --wait \
+                        --timeout 5m
+                """
+            }
+        }
+
+        stage('Resolve Image Tags') {
+            steps {
+                script {
+                    SERVICES.each { svc ->
+                        if (svc.chartType == 'swagger') {
+                            svc.tag = ''
+                            echo "${svc.name} -> uses default public image from chart"
+                        } else {
+                            def branchName = params[svc.param]?.trim()
+
+                            if (!branchName || branchName == 'main') {
+                                svc.tag = env.DEFAULT_TAG
+                            } else {
+                                def fullSha = sh(
+                                    script: "git ls-remote ${env.APP_REPO_URL} refs/heads/${branchName} | cut -f1",
+                                    returnStdout: true
+                                ).trim()
+
+                                if (!fullSha) {
+                                    error "Không tìm thấy branch '${branchName}' cho service ${svc.name}"
+                                }
+
+                                svc.tag = fullSha.take(env.TAG_LENGTH.toInteger())
+                            }
+
+                            echo "${svc.name} -> branch=${branchName}, imageTag=${svc.tag}"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy Services') {
+            steps {
+                script {
+                    SERVICES.each { svc ->
+                        def serviceType = NODEPORT_SERVICES.contains(svc.name) ? 'NodePort' : 'ClusterIP'
+
+                        if (svc.chartType == 'backend') {
+                            if (svc.name == 'storefront-bff') {
+                                sh """
+                                    helm dependency build ${svc.chart}
+
+                                    helm upgrade --install ${svc.name} ${svc.chart} \
+                                    --namespace ${env.NAMESPACE} \
+                                    --set backend.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
+                                    --set backend.image.tag=${svc.tag} \
+                                    --set 'backend.imagePullSecrets[0].name=dockerhub-secret' \
+                                    --set backend.service.type=ClusterIP \
+                                    --set backend.ingress.enabled=true \
+                                    --set backend.ingress.host=${env.STOREFRONT_HOST} \
+                                    --set backend.ingress.path=/ \
+                                    --set backend.ingress.pathType=Prefix \
+                                    --set backend.ingress.className=nginx \
+                                    --wait \
+                                    --timeout 10m
+                                """
+                            } else if (svc.name == 'backoffice-bff') {
+                                sh """
+                                    helm dependency build ${svc.chart}
+
+                                    helm upgrade --install ${svc.name} ${svc.chart} \
+                                    --namespace ${env.NAMESPACE} \
+                                    --set backend.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
+                                    --set backend.image.tag=${svc.tag} \
+                                    --set 'backend.imagePullSecrets[0].name=dockerhub-secret' \
+                                    --set backend.service.type=ClusterIP \
+                                    --set backend.ingress.enabled=true \
+                                    --set backend.ingress.host=${env.BACKOFFICE_HOST} \
+                                    --set backend.ingress.path=/ \
+                                    --set backend.ingress.pathType=Prefix \
+                                    --set backend.ingress.className=nginx \
+                                    --wait \
+                                    --timeout 10m
+                                """
+                            } else {
+                                sh """
+                                    helm dependency build ${svc.chart}
+
+                                    helm upgrade --install ${svc.name} ${svc.chart} \
+                                    --namespace ${env.NAMESPACE} \
+                                    --set backend.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
+                                    --set backend.image.tag=${svc.tag} \
+                                    --set 'backend.imagePullSecrets[0].name=dockerhub-secret' \
+                                    --set backend.service.type=ClusterIP \
+                                    --set backend.ingress.enabled=false \
+                                    --wait \
+                                    --timeout 10m
+                                """
+                            }
+                        }
+
+                        if (svc.chartType == 'ui') {
+                            if (svc.name == 'storefront-ui') {
+                                sh """
+                                    helm dependency build ${svc.chart}
+
+                                    helm upgrade --install ${svc.name} ${svc.chart} \
+                                      --namespace ${env.NAMESPACE} \
+                                      --set ui.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
+                                      --set ui.image.tag=${svc.tag} \
+                                      --set 'ui.imagePullSecrets[0].name=dockerhub-secret' \
+                                      --set ui.service.type=ClusterIP \
+                                      --set ui.ingress.enabled=false \
+                                      --set ui.extraEnvs[0].name=API_BASE_PATH \
+                                      --set ui.extraEnvs[0].value=http://storefront-bff/api \
+                                      --set ui.extraEnvs[1].name=HOSTNAME \
+                                      --set ui.extraEnvs[1].value=0.0.0.0 \
+                                      --wait \
+                                      --timeout 10m
+                                """
+                            } else {
+                                sh """
+                                    helm dependency build ${svc.chart}
+
+                                    helm upgrade --install ${svc.name} ${svc.chart} \
+                                      --namespace ${env.NAMESPACE} \
+                                      --set ui.image.repository=docker.io/${env.DOCKERHUB_ORG}/${svc.image} \
+                                      --set ui.image.tag=${svc.tag} \
+                                      --set 'ui.imagePullSecrets[0].name=dockerhub-secret' \
+                                      --set ui.service.type=ClusterIP \
+                                      --set ui.ingress.enabled=false \
+                                      --set ui.extraEnvs[0].name=HOSTNAME \
+                                      --set ui.extraEnvs[0].value=0.0.0.0 \
+                                      --wait \
+                                      --timeout 10m
+                                """
+                            }
+                        }
+
+                        if (svc.chartType == 'swagger') {
+                            sh """
+                                helm dependency build ${svc.chart} || true
+
+                                helm upgrade --install ${svc.name} ${svc.chart} \
+                                  --namespace ${env.NAMESPACE} \
+                                  --set service.type=ClusterIP \
+                                  --set ingress.enabled=false \
+                                  --wait \
+                                  --timeout 10m
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy Namespace API Gateway') {
+            steps {
+                sh '''
+                    set -e
+
+                    GATEWAY_FILE="/tmp/nginx-api-gateway-${NAMESPACE}.yaml"
+
+                    cp k8s/deploy/nginx-api-gateway.yaml "$GATEWAY_FILE"
+
+                    # Đổi namespace từ mẫu sang namespace test
+                    sed -i "s|namespace: yas$|namespace: ${NAMESPACE}|g" "$GATEWAY_FILE"
+
+                    # Đổi host API chính sang host API của namespace test
+                    sed -i "s|api.yas.local.com|${API_HOST}|g" "$GATEWAY_FILE"
+
+                    # Đổi upstream service từ namespace yas sang namespace test
+                    sed -i "s|.yas.svc.cluster.local|.${NAMESPACE}.svc.cluster.local|g" "$GATEWAY_FILE"
+
+                    echo "===== Generated namespace API gateway ====="
+                    grep -nE "namespace:|server_name|host:|svc.cluster.local" "$GATEWAY_FILE" | head -80
+
+                    kubectl apply -f "$GATEWAY_FILE"
+                '''
+            }
+        }
+
+        stage('Mount Media Images') {
+            steps {
+                script {
+                    def pvcYaml = [
+                        'apiVersion: v1',
+                        'kind: PersistentVolumeClaim',
+                        'metadata:',
+                        "  name: ${env.MEDIA_IMAGES_PVC}",
+                        'spec:',
+                        '  accessModes:',
+                        '    - ReadWriteOnce',
+                        '  resources:',
+                        '    requests:',
+                        '      storage: 1Gi',
+                        ''
+                    ].join('\n')
+
+                    def mediaDeploymentPatchYaml = [
+                        'spec:',
+                        '  template:',
+                        '    spec:',
+                        '      containers:',
+                        '        - name: media',
+                        '          volumeMounts:',
+                        '            - name: media-images',
+                        "              mountPath: ${env.MEDIA_STORAGE_PATH}",
+                        '      volumes:',
+                        '        - name: media-images',
+                        '          persistentVolumeClaim:',
+                        "            claimName: ${env.MEDIA_IMAGES_PVC}",
+                        ''
+                    ].join('\n')
+
+                    def loaderYaml = [
+                        'apiVersion: v1',
+                        'kind: Pod',
+                        'metadata:',
+                        '  name: media-images-loader',
+                        'spec:',
+                        '  restartPolicy: Never',
+                        '  containers:',
+                        '    - name: media-images-loader',
+                        '      image: busybox:1.36',
+                        '      command:',
+                        '        - sh',
+                        '        - -c',
+                        "        - \"mkdir -p ${env.MEDIA_STORAGE_PATH} && sleep 3600\"",
+                        '      volumeMounts:',
+                        '        - name: media-images',
+                        "          mountPath: ${env.MEDIA_STORAGE_PATH}",
+                        '  volumes:',
+                        '    - name: media-images',
+                        '      persistentVolumeClaim:',
+                        "        claimName: ${env.MEDIA_IMAGES_PVC}",
+                        ''
+                    ].join('\n')
+
+                    writeFile file: 'media-images-pvc.yaml', text: pvcYaml
+                    writeFile file: 'media-deployment-patch.yaml', text: mediaDeploymentPatchYaml
+                    writeFile file: 'media-images-loader.yaml', text: loaderYaml
+
+                    sh '''
+                        set -e
+
+                        echo "=========================================================="
+                        echo "Mount media images"
+                        echo "Namespace : ${NAMESPACE}"
+                        echo "Source    : ${MEDIA_ASSETS_SOURCE_DIR}"
+                        echo "Target    : ${MEDIA_STORAGE_PATH}"
+                        echo "PVC       : ${MEDIA_IMAGES_PVC}"
+                        echo "=========================================================="
+
+                        if [ ! -d "${MEDIA_ASSETS_SOURCE_DIR}" ]; then
+                            echo "ERROR: Không tìm thấy folder ảnh: ${MEDIA_ASSETS_SOURCE_DIR}"
+                            echo "Danh sách file ảnh tìm thấy trong workspace:"
+                            find . -type f \\( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" \\) | head -80
+                            exit 1
+                        fi
+
+                        echo "===== media-images-pvc.yaml ====="
+                        cat media-images-pvc.yaml
+                        echo "================================="
+
+                        kubectl apply --dry-run=client -n "${NAMESPACE}" -f media-images-pvc.yaml
+                        kubectl apply -n "${NAMESPACE}" -f media-images-pvc.yaml
+
+                        echo "===== media-deployment-patch.yaml ====="
+                        cat media-deployment-patch.yaml
+                        echo "========================================"
+
+                        kubectl patch deployment media \
+                        -n "${NAMESPACE}" \
+                        --type='strategic' \
+                        --patch "$(cat media-deployment-patch.yaml)"
+
+                        kubectl rollout status deploy/media -n "${NAMESPACE}" --timeout=5m
+
+                        echo "Verify media deployment has /images mount:"
+                        kubectl get deploy media -n "${NAMESPACE}" -o yaml | grep -nE 'media-images|mountPath|claimName|/images' -C 5
+
+                        echo "Tạo pod tạm để copy ảnh vào PVC..."
+                        kubectl delete pod media-images-loader -n "${NAMESPACE}" --ignore-not-found=true
+
+                        echo "===== media-images-loader.yaml ====="
+                        cat media-images-loader.yaml
+                        echo "==================================="
+
+                        kubectl apply --dry-run=client -n "${NAMESPACE}" -f media-images-loader.yaml
+                        kubectl apply -n "${NAMESPACE}" -f media-images-loader.yaml
+
+                        kubectl wait --for=condition=Ready pod/media-images-loader -n "${NAMESPACE}" --timeout=120s
+
+                        echo "Copy ảnh từ Jenkins workspace vào PVC..."
+                        kubectl cp "${MEDIA_ASSETS_SOURCE_DIR}/." "${NAMESPACE}/media-images-loader:${MEDIA_STORAGE_PATH}/"
+
+                        echo "Verify copied images in loader pod:"
+                        kubectl exec -n "${NAMESPACE}" media-images-loader -- sh -c "find ${MEDIA_STORAGE_PATH} -maxdepth 4 -type f | head -80"
+
+                        echo "Xóa pod copy tạm..."
+                        kubectl delete pod media-images-loader -n "${NAMESPACE}" --ignore-not-found=true
+
+                        echo "Restart media để đọc lại ảnh..."
+                        kubectl rollout restart deploy/media -n "${NAMESPACE}"
+                        kubectl rollout status deploy/media -n "${NAMESPACE}" --timeout=5m
+
+                        echo "Verify images inside media pod:"
+                        kubectl exec -n "${NAMESPACE}" deploy/media -- sh -c "find ${MEDIA_STORAGE_PATH} -maxdepth 4 -type f | head -80"
+
+                        echo "Mount media images completed."
+                        echo "=========================================================="
+                    '''
+                }
+            }
+        }
+
+        stage('Show Access URLs') {
+            steps {
+                script {
+                    echo "=========================================================="
+                    echo "Deploy thành công!"
+                    echo "Namespace: ${env.NAMESPACE}"
+                    echo ""
+                    echo "Thêm các dòng sau vào file hosts trên máy của bạn:"
+                    echo ""
+                    echo "${env.PUBLIC_NODE_IP} ${env.STOREFRONT_HOST}"
+                    echo "${env.PUBLIC_NODE_IP} ${env.BACKOFFICE_HOST}"
+                    echo "${env.PUBLIC_NODE_IP} ${env.API_HOST}"
+                    echo ""
+                    echo "Các URL truy cập:"
+                    echo ""
+                    echo "Storefront : http://${env.STOREFRONT_HOST}"
+                    echo "Backoffice : http://${env.BACKOFFICE_HOST}"
+                    echo "Swagger    : http://${env.API_HOST}/swagger-ui"
+                    echo ""
+                    echo "Lưu ý:"
+                    echo "- Browser vào storefront-bff/backoffice-bff qua domain, không vào UI trực tiếp"
+                    echo "- API/media/swagger đi qua nginx-api-gateway riêng của namespace test"
+                    echo "- Nếu test login, cần thêm redirect URI tương ứng trong Keycloak"
+                    echo "=========================================================="
+                }
+            }
+        }
+
+        stage('Generate Cleanup Link') {
+            steps {
+                script {
+                    echo "=========================================================="
+                    echo "Click vào đường dẫn dưới đây để dọn dẹp môi trường test khi xong việc:"
+                    echo "${env.JENKINS_BASE_URL}/job/developer_clean/buildWithParameters?token=yas-destroy-token&TARGET_NAMESPACE=${env.NAMESPACE}"
+                    echo "=========================================================="
+                }
+            }
+        }
+    }
+}

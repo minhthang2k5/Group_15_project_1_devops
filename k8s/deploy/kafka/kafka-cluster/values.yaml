@@ -8,4 +8,4 @@ postgresql:
   password: admin
 debeziumConnect:
   image: ghcr.io/nashtech-garage/debezium-connect-postgresql:latest
-  buildImage: false #Enabled when build debezium-connect-postgresql image
+  buildImage: true #Enabled when build debezium-connect-postgresql image

@@ -4,5 +4,8 @@ ui:
     tag: latest
   nameOverride: backoffice-ui
   fullnameOverride: backoffice-ui
+  extraEnvs:
+    - name: HOSTNAME
+      value: "0.0.0.0"
   ingress:
     enabled: false

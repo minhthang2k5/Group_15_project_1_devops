@@ -1,0 +1,32 @@
+pipeline {
+    agent any
+    
+    // Định nghĩa tham số đầu vào để nhận tên namespace từ Job Build
+    parameters {
+        string(name: 'TARGET_NAMESPACE', defaultValue: '', description: 'Nhập tên namespace cần dọn dẹp')
+    }
+
+    stages {
+        stage('Validate & Clean up') {
+            steps {
+                script {
+                    def ns = params.TARGET_NAMESPACE?.trim()
+                    
+                    // Ngăn chặn xóa nhầm namespace hệ thống
+                    if (!ns || ns == 'default' || ns == 'kube-system' || ns == 'istio-system' || ns == 'argocd') {
+                        error "Tên namespace rỗng hoặc thuộc hệ thống, không được phép xóa: '${ns}'"
+                    }
+                    
+                    echo "=========================================================="
+                    echo "Bắt đầu dọn dẹp toàn bộ tài nguyên tại namespace: ${ns}..."
+                    
+                    // Thực thi lệnh xóa K8s
+                    sh "kubectl delete namespace ${ns} --ignore-not-found=true"
+                    
+                    echo "Đã dọn dẹp hoàn tất môi trường: ${ns}!"
+                    echo "=========================================================="
+                }
+            }
+        }
+    }
+}

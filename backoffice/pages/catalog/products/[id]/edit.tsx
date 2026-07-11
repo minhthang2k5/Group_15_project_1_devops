@@ -23,6 +23,8 @@ import { toastError } from '@commonServices/ToastService';
 import { PRODUCT_URL, ResponseStatus } from '@constants/Common';
 import ProductAttributes from '../[id]/productAttributes';
 
+// test
+
 const EditProduct: NextPage = () => {
   //Get ID
   const router = useRouter();
@@ -126,7 +128,7 @@ const EditProduct: NextPage = () => {
             <div className="text-center"></div>
           ) : (
             <div className="text-center">
-              <button className="btn btn-primary" type="submit">
+              <button id="save-product-button" className="btn btn-primary" type="submit">
                 Save
               </button>
               <Link href="/catalog/products">

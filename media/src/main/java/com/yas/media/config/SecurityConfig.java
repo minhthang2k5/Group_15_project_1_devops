@@ -24,8 +24,15 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/prometheus", "/actuator/health/**",
                     "/swagger-ui", "/swagger-ui/**", "/error", "/v3/api-docs/**").permitAll()
+
+                // Public image/file endpoints for browser <img src="...">
                 .requestMatchers(HttpMethod.GET, "/medias/**").permitAll()
-                .requestMatchers("/medias").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.GET, "/media/medias/**").permitAll()
+
+                // Admin-only write/list management endpoints
+                .requestMatchers(HttpMethod.POST, "/medias").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.POST, "/media/medias").hasRole("ADMIN")
+                
                 .anyRequest().authenticated())
             .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
             .build();

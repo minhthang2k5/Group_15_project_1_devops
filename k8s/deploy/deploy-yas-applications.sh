@@ -32,11 +32,12 @@ sleep 60
 
 helm upgrade --install swagger-ui ../charts/swagger-ui \
 --namespace yas --create-namespace \
+--set ingress.enabled=false \
 --set ingress.host="api.$DOMAIN"
 
 sleep 20
 
-for chart in {"cart","customer","inventory","location","media","order","payment","payment-paypal","product","promotion","rating","search","tax","recommendation","webhook","sampledata"} ; do
+for chart in {"cart","customer","inventory","location","media","order","payment","product","promotion","rating","search","tax","recommendation","webhook","sampledata"} ; do
     helm dependency build ../charts/"$chart"
     helm upgrade --install "$chart" ../charts/"$chart" \
     --namespace yas --create-namespace \

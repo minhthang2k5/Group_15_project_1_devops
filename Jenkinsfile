@@ -11,6 +11,7 @@ def getAffectedPaths() {
     return paths
 }
 
+
 @com.cloudbees.groovy.cps.NonCPS
 def extractUniqueFolders(List paths) {
     def folders = [] as Set
@@ -25,14 +26,34 @@ def extractUniqueFolders(List paths) {
 def getChangedServices() {
     def changedServices = [] as Set
 
-    // Ưu tiên git diff với main để xác định chính xác service thay đổi
     def gitDiffOutput = ''
     try {
-        sh(script: 'git fetch --no-tags --prune --depth=1 origin +refs/heads/main:refs/remotes/origin/main', returnStdout: false)
-        gitDiffOutput = sh(
-            script: 'git diff --name-only origin/main...HEAD',
-            returnStdout: true
-        ).trim()
+        // Phát hiện tag (release)
+        def gitTag = ''
+        if (env.TAG_NAME) {
+            gitTag = env.TAG_NAME
+        } else {
+            try {
+                gitTag = sh(script: 'git describe --tags --exact-match 2>/dev/null || echo ""', returnStdout: true).trim()
+            } catch (e) {}
+        }
+        def isRelease = gitTag && gitTag.startsWith('v')
+
+        // Trên nhánh main hoặc khi build tag: so sánh với commit trước đó (HEAD~1)
+        // Trên nhánh dev: so sánh với origin/main
+        if (isRelease || env.BRANCH_NAME == 'main' || env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main') {
+            echo "Đang ở nhánh main hoặc build tag (${gitTag ?: 'main'}). So sánh với commit trước đó (HEAD~1)..."
+            gitDiffOutput = sh(
+                script: 'git diff --name-only HEAD~1',
+                returnStdout: true
+            ).trim()
+        } else {
+            sh(script: 'git fetch --no-tags --prune --depth=1 origin +refs/heads/main:refs/remotes/origin/main', returnStdout: false)
+            gitDiffOutput = sh(
+                script: 'git diff --name-only origin/main...HEAD',
+                returnStdout: true
+            ).trim()
+        }
     } catch (e) {
         echo "git diff failed, falling back to changeSets: ${e.message}"
     }
@@ -84,6 +105,7 @@ pipeline {
                     echo '=> Bắt đầu tải và chạy Gitleaks...'
                     sh '''
                                         set -e
+                                        rm -rf yas-gitops
                                         GITLEAKS_URL="https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_8.18.2_linux_x64.tar.gz"
 
                                         if command -v gitleaks >/dev/null 2>&1; then
@@ -169,16 +191,10 @@ pipeline {
             // Lấy danh sách service thay đổi để tối ưu hóa việc quét cho Monorepo 
             def services = getChangedServices().toList().sort()
 
-            withSonarQubeEnv('SonarQube') {
-                if (services.isEmpty()) {
-                    echo 'Không phát hiện service thay đổi. Phân tích SonarQube cho TOÀN BỘ dự án.'
-                    sh """
-                    mvn -B -DskipTests sonar:sonar \
-                      -Dsonar.projectKey=minhthang2k5_Group_15_project_1_devops \
-                      -Dsonar.organization=minhthang2k5 \
-                      -Dsonar.projectName="YAS Parent"
-                    """
-                } else {
+            if (services.isEmpty()) {
+                echo 'Không phát hiện service thay đổi. Bỏ qua phân tích SonarQube.'
+            } else {
+                withSonarQubeEnv('SonarQube') {
                     def serviceSelector = services.join(',')
                     echo "Phân tích SonarQube cho CÁC SERVICE BỊ THAY ĐỔI: ${services}"
                     // Sử dụng flag -pl để chỉ định quét các service cụ thể [cite: 28]
@@ -245,14 +261,225 @@ pipeline {
             steps {
                 script {
                     def services = getChangedServices().toList().sort()
+                    services.remove("payment-paypal")
                     
                     if (services.isEmpty()) {
-                        echo 'Đang đóng gói TOÀN BỘ ứng dụng (Bỏ qua test vì đã chạy ở stage trước)...'
+                        echo '⚠️ Đang đóng gói TOÀN BỘ ứng dụng (Bỏ qua test vì đã chạy ở stage trước)...'
                         sh 'mvn package -DskipTests -DskipCompile=false'
                     } else {
                         def serviceSelector = services.join(',')
                         echo "Đang đóng gói CÁC SERVICE BỊ THAY ĐỔI: ${services}"
                         sh "mvn package -pl ${serviceSelector} -am -DskipTests -DskipCompile=false"
+                    }
+                }
+            }
+        }
+
+        stage('Build & Push Docker Image') {
+            steps {
+                script {
+                    echo '=> Bắt đầu Build và Push Docker Image lên Docker Hub...'
+                    
+                    // Lấy 7 ký tự đầu của commit ID
+                    def commitHash = env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                    
+                    // Xác định danh sách service cần build và tag tương ứng
+                    def servicesToBuild = []
+                    def imageTag = ''
+                    
+                    // Phát hiện tag (release)
+                    def gitTag = ''
+                    if (env.TAG_NAME) {
+                        gitTag = env.TAG_NAME
+                    } else {
+                        try {
+                            gitTag = sh(script: 'git describe --tags --exact-match 2>/dev/null || echo ""', returnStdout: true).trim()
+                        } catch (e) {}
+                    }
+                    def isRelease = gitTag && gitTag.startsWith('v')
+                    
+                    // Nhất quán với getChangedServices(): kiểm tra cả BRANCH_NAME và GIT_BRANCH
+                    def isMainBranch = (env.BRANCH_NAME == 'main' || env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main')
+                    
+                    if (isRelease) {
+                        servicesToBuild = getChangedServices().toList().sort()
+                        imageTag = gitTag
+                        echo "Phát hiện tag release: ${imageTag}. Build cho Staging. Dịch vụ: ${servicesToBuild}"
+                    } else if (isMainBranch) {
+                        // Nhánh main: chỉ build CÁC SERVICE THAY ĐỔI, tag = commitHash (7 ký tự)
+                        servicesToBuild = getChangedServices().toList().sort()
+                        imageTag = commitHash
+                        echo "Phát hiện nhánh 'main'. Chỉ build CÁC SERVICE THAY ĐỔI: ${servicesToBuild} | Tag: ${imageTag}"
+                    } else {
+                        // Yêu cầu #3: User branch → chỉ build services thay đổi so với main
+                        // Tag = <commitHash> (commit ID cuối cùng của branch đó)
+                        servicesToBuild = getChangedServices().toList().sort()
+                        imageTag = commitHash
+                        
+                        // Lấy tên nhánh để log
+                        def rawBranch = env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'dev'
+                        echo "Phát hiện user branch '${rawBranch}'. Chỉ build CÁC SERVICE THAY ĐỔI: ${servicesToBuild} | Tag: ${imageTag}"
+                    }
+
+                    // Loại bỏ các module phụ trợ không chạy container
+                    servicesToBuild.remove("payment-paypal")
+                    
+                    // TỰ ĐỘNG FALLBACK: Nếu danh sách trống trên main hoặc release tag (do shallow clone / build thủ công)
+                    // Jenkins sẽ tự động điền toàn bộ 18 services để đồng bộ đầy đủ cấu hình.
+                    // if (servicesToBuild.isEmpty() && (isMainBranch || isRelease)) {
+                    //     servicesToBuild = ["tax","backoffice-bff", "storefront-ui", "backoffice-ui","storefront-bff"]
+                    //     echo "⚠️ Danh sách thay đổi trống. Tự động chuyển sang build/push TOÀN BỘ service: ${servicesToBuild}"
+                    // }
+
+                    if (servicesToBuild.isEmpty()) {
+                        echo "⏭️  Không có service nào thay đổi → Bỏ qua Build & Push Docker Image."
+                    } else {
+                        // Nhúng ID của Credentials Docker Hub
+                        withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials-id', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
+                            
+                            // Đăng nhập Docker Hub
+                            sh '''
+                                echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                            '''
+                            
+                            for (String svc : servicesToBuild) {
+                                // Ánh xạ tên service sang tên repo Docker Hub chính xác
+                                def dockerRepoName = svc
+                                if (svc == 'backoffice-ui') {
+                                    dockerRepoName = 'backoffice'
+                                } else if (svc == 'storefront-ui') {
+                                    dockerRepoName = 'storefront'
+                                }
+
+                                echo "Đang Build và Push image cho service: ${dockerRepoName} (Docker Hub: ${dockerRepoName}) | Tag: ${imageTag}"
+                                
+                                def imageName = "${env.DOCKER_USER}/${dockerRepoName}:${imageTag}"
+                                
+                                // Bỏ qua nếu thư mục service không tồn tại (tránh lỗi pipeline)
+                                if (fileExists("./${dockerRepoName}")) {
+                                    sh "docker build -t ${imageName} ./${dockerRepoName}"
+                                    sh "docker push ${imageName}"
+                                    echo "✅ Đã push thành công: ${imageName}"
+                                    
+                                    // Nếu là main branch (nhưng không phải tag release), đẩy thêm tag 'latest' cho CD Job của dev dùng
+                                    if (isMainBranch && !isRelease) {
+                                        def latestImageName = "${env.DOCKER_USER}/${dockerRepoName}:latest"
+                                        sh "docker tag ${imageName} ${latestImageName}"
+                                        sh "docker push ${latestImageName}"
+                                        echo "✅ Đã push tag latest thành công: ${latestImageName}"
+                                    }
+                                } else {
+                                    echo "CẢNH BÁO: Không tìm thấy thư mục ./${dockerRepoName}. Bỏ qua..."
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Update GitOps Repo') {
+            steps {
+                script {
+                    def servicesToBuild = getChangedServices().toList().sort()
+                    def commitHash = env.GIT_COMMIT ? env.GIT_COMMIT.take(7) : 'latest'
+                    
+                    def gitTag = ''
+                    if (env.TAG_NAME) {
+                        gitTag = env.TAG_NAME
+                    } else {
+                        try {
+                            gitTag = sh(script: 'git describe --tags --exact-match 2>/dev/null || echo ""', returnStdout: true).trim()
+                        } catch (e) {}
+                    }
+                    def isRelease = gitTag && gitTag.startsWith('v')
+                    def isMainBranch = (env.BRANCH_NAME == 'main' || env.GIT_BRANCH == 'main' || env.GIT_BRANCH == 'origin/main')
+                    def imageTag = isRelease ? gitTag : commitHash
+                    
+                    // Loại bỏ các module phụ trợ không chạy container
+                    servicesToBuild.remove("payment-paypal")
+                    
+                    // TỰ ĐỘNG FALLBACK: Điền toàn bộ 18 services nếu danh sách trống trên main hoặc release tag
+                    // if (servicesToBuild.isEmpty() && (isMainBranch || isRelease)) {
+                    //     servicesToBuild = ["storefront-bff", "backoffice-bff", "storefront-ui", "backoffice-ui","tax"]
+                    //     echo "⚠️ Danh sách thay đổi trống. Tự động chuyển sang cập nhật GitOps TOÀN BỘ service."
+                    // }
+                    
+                    // Chỉ chạy GitOps cho nhánh main hoặc Release Tag
+                    if (!isMainBranch && !isRelease) {
+                        echo "⏭️ Đây là user branch. Chỉ push Docker Image để CD Job sử dụng. Bỏ qua cập nhật GitOps."
+                    } else if (servicesToBuild.isEmpty()) {
+                        echo "⏭️ Không có service nào thay đổi -> Bỏ qua Update GitOps Repo."
+                    } else {
+                        def envName = isRelease ? 'staging' : 'dev'
+                        
+                        echo "=> Bắt đầu Clone và Update GitOps Repo cho: ${servicesToBuild} | Môi trường: ${envName} | Tag: ${imageTag}"
+                        
+                        // Sử dụng Credentials ID 'github-credentials-id' lưu Token/Username Password để Git Push
+                        withCredentials([usernamePassword(credentialsId: 'github-credentials-id', passwordVariable: 'GIT_PASS', usernameVariable: 'GIT_USER')]) {
+                            sh """
+                                git config --global user.email "lenhatthanh1004@gmail.com"
+                                git config --global user.name "23120357"
+                                
+                                rm -rf yas-gitops
+                                git clone https://${GIT_USER}:${GIT_PASS}@github.com/23120357/yas-gitops.git
+                            """
+                            
+                            for (String svc : servicesToBuild) {
+                                sh """
+                                    cd yas-gitops
+                                    
+                                    # Ánh xạ từ tên service trong repo source code sang tên file/chart trong repo gitops
+                                    GITOPS_SVC="${svc}"
+                                    if [ "${svc}" = "backoffice" ]; then
+                                        GITOPS_SVC="backoffice-ui"
+                                    elif [ "${svc}" = "storefront" ]; then
+                                        GITOPS_SVC="storefront-ui"
+                                    fi
+                                    
+                                    FILE_PATH="environments/${envName}/services/\${GITOPS_SVC}.yaml"
+                                    
+                                    # Xác định KEY (ui hoặc backend)
+                                    if grep -q "^ui:" "charts/\${GITOPS_SVC}/values.yaml"; then
+                                        KEY="ui"
+                                    else
+                                        KEY="backend"
+                                    fi
+                                    
+                                    # Đảm bảo thư mục tồn tại
+                                    mkdir -p environments/${envName}/services
+                                    
+                                    # Cập nhật tag thông minh bảo toàn cấu hình cũ
+                                    if [ -f "\${FILE_PATH}" ] && grep -q "tag:" "\${FILE_PATH}"; then
+                                        sed -i 's/tag: .*/tag: "'${imageTag}'"/g' "\${FILE_PATH}"
+                                    elif [ -f "\${FILE_PATH}" ]; then
+                                        # Nếu file đã tồn tại nhưng chưa có tag:, ta append thêm vào cuối
+                                        echo "  image:" >> "\${FILE_PATH}"
+                                        echo "    tag: \"${imageTag}\"" >> "\${FILE_PATH}"
+                                    else
+                                        # Nếu file chưa tồn tại thì tạo mới hoàn toàn
+                                        cat <<EOF > "\${FILE_PATH}"
+# Service specific overrides
+\${KEY}:
+  image:
+    tag: "${imageTag}"
+EOF
+                                    fi
+                                    
+                                    git add "\${FILE_PATH}"
+                                """
+                            }
+                            
+                            sh """
+                                cd yas-gitops
+                                if ! git diff --cached --quiet; then
+                                    git commit -m "Auto-update image tag to ${imageTag} for ${servicesToBuild} [skip ci]"
+                                    git push origin main
+                                else
+                                    echo "Không có thay đổi để commit."
+                                fi
+                            """
+                        }
                     }
                 }
             }
