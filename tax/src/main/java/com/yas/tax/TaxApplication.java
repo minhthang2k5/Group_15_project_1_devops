@@ -5,7 +5,7 @@ import com.yas.tax.config.ServiceUrlConfig;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-
+// test scan CI
 @SpringBootApplication(scanBasePackages = {"com.yas.tax", "com.yas.commonlibrary"})
 @EnableConfigurationProperties({ServiceUrlConfig.class, CorsConfig.class})
 public class TaxApplication {
