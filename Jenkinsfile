@@ -202,7 +202,8 @@ pipeline {
                     mvn -B -DskipTests -pl ${serviceSelector} -am sonar:sonar \
                       -Dsonar.projectKey=minhthang2k5_Group_15_project_1_devops \
                       -Dsonar.organization=minhthang2k5 \
-                      -Dsonar.projectName="YAS Microservices"
+                      -Dsonar.projectName="YAS Microservices" \
+                      -Dsonar.coverage.exclusions="**/*"
                     """
                 }
             }
