@@ -16,6 +16,7 @@
         <sonar.organization>nashtech-garage</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
         <sonar.projectKey>nashtech-garage_yas-location</sonar.projectKey>
+        <revision>1.0-SNAPSHOT</revision>
     </properties>
     <dependencies>
         <dependency>
@@ -79,6 +80,30 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>jacoco-check</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <dataFile>${project.build.directory}/jacoco.exec</dataFile>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.70</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
