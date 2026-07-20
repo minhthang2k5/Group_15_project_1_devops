@@ -1,5 +1,5 @@
 package com.yas.rating.config;
-
+//test scan service
 import java.util.Optional;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.context.annotation.Bean;

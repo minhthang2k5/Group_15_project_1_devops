@@ -1,5 +1,5 @@
 package com.yas.rating.controller;
-
+//scan test
 import static io.restassured.RestAssured.given;
 import static org.mockito.ArgumentMatchers.anyLong;
 
